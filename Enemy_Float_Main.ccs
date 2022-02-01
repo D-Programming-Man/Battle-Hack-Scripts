@@ -1,0 +1,336 @@
+import asm65816
+import asmref
+
+//-+-+-+-+-+ SCRIPT INFO +-+-+-+-+-
+
+/*
+	What this script does is to implement a new pointless feature that makes enemy's float. It does not have any gameplay affects other than it looks aesthetically pleasing. In order for an enemy to float, you'll have to give an enemy a status effect of 0x000A. How you can give it to them by ASM is this:
+	
+	LDA_a (0xA970) to target itself or LDA_a (0xA972) to target others
+	LDX_i (0x0000)
+	LDY_i (0x000A)
+	JSL (Inflict_Status) // <-- this is in the asmref.ccs file
+	
+	Do note that if an enemy receives any of these status effects, then the floating affect will be overwritten:
+	. Unconscious
+	. Diamondized
+	. Paralyzed
+	. Nauseous
+	. Poisoned
+	. Sunstroke
+	. Sniffling 
+	
+	Also note that this only works for enemies and not towards players. So if a player got affected with the floating status affect, nothing will happen.
+
+	This makes use of the enemy's vitality stat to keep track of the values being used as parameters to a sine function.
+	So if you intend to use the enemy's vitality stat to play an important role in battle, then what
+	you will need to do is to change the RAM where it writes the paramters for the sine fuciton to another RAM section.
+	
+	TODO: Optimize this script so it doesn't lag the game when there's 5 or more floating enemies in battle.
+*/
+
+//-+-+-+-+-+ SETTINGS +-+-+-+-+-
+
+// These values are the original y-positions of the enemy in their rows
+define First_Row_y = 0x90		
+define Second_Row_y = 0x80		
+
+// These value determines the middle y-axis where the enemy will float through for the first and second row.
+define First_Row_Base_y = 0x80	
+define Second_Row_Base_y = 0x78
+
+// This defines the amplitude of how much to float up and downward.
+// Higher amplitudeFraction means a larger distance going up and down
+define amplitudeFraction = 8 	// Default is 8
+
+// This defines the speed of each y-position per frame.
+// So if speedFraction is 2, then that means each y-position will be updated every 2 frames. If this is set at 1, then that means it'll update per frame.
+// Remeber that there's 60 frames in a second
+define speedFraction = 1	// Default is 1
+
+//-+-+-+-+-+ ASM CODE +-+-+-+-+-
+Enemy_Float_Check:{
+	REP (0x31)
+	PHD
+	TDC
+	ADC_i (0xFFEE)
+	TCD
+	
+	LDX_i (0xA21C)	// First enemy in the battle
+	STZ_d (0x02)	// Counter
+	STX_d (0x04)	// Current Enemy
+	
+// This checks to see if each enemy has a floating status effect 
+Floating_Status_Check:
+	LDX_d (0x04)
+	LDA_x (0x0000)
+	BEQ_a (Check_Next_Enemy)
+
+	LDA_x (0x001D)
+	CMP_i (0x000A)	// Floating Status Effect
+	BNE_a (Check_y_Position) // If they don't have the effect, check if they are at the right y-position
+	
+	LDA_i (speedFraction)	// Load speedFraction
+	CMP_i (1)
+	BEQ_a (Determine_Row)	// If it's 1, then branch
+	
+	// This updates the sprite's y-position per set of frames.
+	LDA_a (0x00A7)	// In-Game Frame counter
+	AND_i (0x00FF) 	// Get low byte
+	LDY_i (speedFraction)
+	JSL (Divide_YxA)// Mod speedFraction
+	TYA
+	CMP_i (0)
+	BNE_a (Check_Next_Enemy) // If mod speedFraction != 0, branch
+	
+Determine_Row:
+	LDA_x (0x0010)
+	AND_i (0x00FF)
+	CMP_i (0)
+	BNE_a (Second_Row)
+	
+	LDA_i (First_Row_Base_y)
+	BRA_a (Store_y_Pos)
+	
+Second_Row:
+	LDA_i (Second_Row_Base_y)
+	
+Store_y_Pos:
+	STA_d (0x0E)
+	LDX_d (0x04)
+	JSL (New_Y_Pos)
+
+	STA_d (0x06)	// DPR 0x06 = New y-position
+	LDA_d (0x06)	// Load the new y-position
+	SEP (0x20)		// Make A register 8-bit
+	STA_x (0x0045)	// Store it back to the Y position
+	REP (0x20)		// Make A register 16-bit
+	BRA_a (Check_Next_Enemy)
+	
+Check_y_Position:
+	LDA_x (0x0010)
+	AND_i (0x00FF)
+	CMP_i (0)
+	BNE_a (Second_Row_2)
+	
+	LDA_i (First_Row_y)
+	BRA_a (Compare_y_pos)
+	
+Second_Row_2:
+	LDA_i (Second_Row_y)
+	
+Compare_y_pos:
+	STA_d (0x0E)
+	
+	LDX_d (0x04)	// Load in the enemy
+	LDA_x (0x0045)	// Load enemy's current y-position
+	AND_i (0x00FF)	// Get low byte
+	CMP_d (0x0E)	// Check to see if they are in the adjusted y-position
+	BEQ_a (Check_Next_Enemy) // If so, then skip
+	
+	LDA_d (0x0E) 	// Else, fix the enemy's first row y-position
+	SEP (0x20)		// Make A register 8-bit
+	STA_x (0x0045)	// Store the original y-position
+	REP (0x20)		// Make A register 16-bit
+	BRA_a (Check_Next_Enemy) // Branch
+	
+Check_Next_Enemy:	
+	INC_d (0x02)	// Increment Counter
+	LDA_d (0x02)	// Load Counter
+	CMP_i (0x0008)	// If counter = 8 (as in, we loop through all of the enemies)
+	BEQ_a (Return)	// We return back to the routine we jump out off
+	BCS_a (Return)	// If the counter is above 7, we return too
+	
+	LDA_d (0x04)	// Else, we load the current enemy
+	CLC
+	ADC_i (0x004E)	// We go to the next enemy
+	STA_d (0x04)	// Store it back to DPR 0x04
+	
+	BRA_a (Floating_Status_Check) // Loop
+
+Return:
+	PLD
+	RTL
+}
+
+//-+-+-+-+-+ MISC ROUTINES +-+-+-+-+-
+/*------------------------------
+	This routine will calcualte the new y-position based on the formula:
+	
+	new_y_pos = base_y_pos - (sin(var) / (base_y_pos / 8))
+		- where var is an incremental variable stored in RAM from ranges 0 through 127 inclusively
+		
+									OR
+									
+	new_y_pos = base_y_pos + (sin(var) / (base_y_pos / 8))
+		- where var is an incremental variable stored in RAM from ranges 128 through 255 inclusively 
+		
+Parameters:
+	A: The base y-position of the enemy
+	X: Current enemy address location
+Returns:
+	A: The new y-position of the enemy
+*/
+
+New_Y_Pos:{
+	REP (0x31)
+	PHD
+	PHA
+	TDC
+	ADC_i (0xFFEE)
+	TCD
+	PLA
+	
+	STA_d (0x02)	// DPR 0x02 = The base y-position
+	STX_d (0x04)	// DPR 0x04 = Current enemy
+	
+	LDA_x (0x0030)	// Load in the enemy's vitality stat. This will be the "var" value in the sine function
+	AND_i (0x00FF)	// Get low byte
+	STA_d (0x08)	// DPR 0x08 = current enemy's vitality
+	CMP_i (0x0080)	// Compares if it's singed negative in 8-bit
+	BCS_a (Two_Compliment_This)	// Make it a positive number
+	
+	BRA_a (Continue)
+	
+Two_Compliment_This:
+	JSL (Twos_Compliment_8_Bit)
+	
+Continue:
+	JSL (Sine)
+	
+	STA_d (0x06)	// DPR 0x06 = Sin(var) or Cos(var)
+	LDA_d (0x02)	// Load base y-position
+	LDY_i (amplitudeFraction)
+	JSL (Divide_YxA)
+	TAY
+	LDA_d (0x06)	// Load Sin(var) into Y register
+	JSL (Divide_YxA)
+	STA_d (0x06)	// DPR 0x06 = sin(var) / (y_pos / 8)
+	
+	LDA_d (0x08)	// Load current enemy's vitality
+	CMP_i (0x0080)	// See if it's singed negaitve in 8-bit
+	BCS_a (Add_y_pos) // If so, then branch
+	
+	LDA_d (0x02)	// Load base y-position
+	SEC
+	SBC_d (0x06)	// y_pos - (sin(var) / (y_pos / 8))
+	BRA_a (Continue_2)
+	
+Add_y_pos:
+	LDA_d (0x02)
+	CLC
+	ADC_d (0x06) 	// y_pos + (sin(var) / (y_pos / 8))
+	
+Continue_2:
+	TAY				// Transfer the result to the Y register
+	
+	LDX_d (0x04)
+	SEP (0x20)
+	LDA_x (0x0030)	// Load in vitality stat
+	INC				// Increment
+	
+	/*
+	// Enabling this will make the enemy jump
+	CMP_8 (0x80)	// Check it against 0x80
+	BMI_a (Set_var)	// If it's lower, then set it
+	LDA_8 (0)	// Else, load in 0
+	*/
+	
+	
+Set_var:
+	STA_x (0x0030)
+	REP (0x20)
+	
+	TYA				// Transfer the data in Y to A
+	
+	PLD
+	RTL
+}
+
+/*------------------------------
+	Rewritting the sine function. Don't know why EB's sine function isn't working for me...
+	
+Parameters:
+	A: Integer to pass to the sine function
+Return:
+	A: The result of the sin loop-up table
+*/
+
+Sine:{
+	TAX
+	LDA_xl (0xC0B425) // Sine look-up table
+	AND_i (0x00FF)
+	RTL
+}
+
+
+/*------------------------------
+	This makes negative numbers into positive numbers. Basically, it's an absolute value function
+	
+Parameters:
+	A: The negaive number (in 8-bits)
+Returns:
+	A: The positive number of that negative number (in 16-bits)
+*/
+Twos_Compliment_8_Bit:{
+	REP (0x31)
+	PHD
+	PHA
+	TDC
+	ADC_i (0xFFEE)
+	TCD
+	PLA
+	
+	AND_i (0x00FF)	// Get low byte
+	STA_d (0x06)	// DPR 0x06 = Negative number (potentially)
+	
+	CMP_i (0x0080)
+	BCS_a (Continue)// If the number >= 0x80, then it's a signed negative
+	BRA_a (Return)	// Else, return
+	
+Continue:
+	STA_d (0x02)	// DPR 0x02 = Negative number
+	LDA_i (0x01)
+	STA_d (0x04)	// DPR 0x04 = Bit position in number
+	STZ_d (0x06)	// DPR 0x06 = Result of the Not
+	STZ_d (0x08)	// Counter
+	
+Not_Loop:
+	LDA_d (0x08)
+	CMP_i (0x08)
+	BCS_a (Return_From_Loop)
+
+	LDA_d (0x02)
+	AND_d (0x04)
+	CMP_i (0x00)
+	BNE_a (Add_0)	// If bit position in negaive number isn't 0, branch
+	LDA_i (0x01)	// Else, Load 1
+	BRA_a (Not_Loop_2)
+	
+Add_0:
+	LDA_i (0x00)	// Load 0
+	
+Not_Loop_2:
+	LDY_d (0x04)	// Load bit position
+	JSL (Mult_YxA) 	// Mult bit position by 1 or 0
+	CLC
+	ADC_d (0x06)	// Add not result to bit position
+	STA_d (0x06)	// Store not result into bit
+	
+	LDA_d (0x04)	// Load bit poisition
+	ASL
+	STA_d (0x04)	// Shift left by 1
+	
+	INC_d (0x08)	// Increment Counter
+	BRA_a (Not_Loop)
+	
+Return_From_Loop:
+	LDA_d (0x06)
+	INC
+	STA_d (0x06)
+	
+Return:
+	LDA_d (0x06)	// Load 2's compliment number
+	PLD
+	RTL
+}

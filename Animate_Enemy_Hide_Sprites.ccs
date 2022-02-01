@@ -1,0 +1,963 @@
+import asm65816
+import asmref
+import Animate_Enemy_Main
+
+//Base Address: 0xC2EAEA
+
+/*
+	This routine deals with writing sprite data to 0xAAD6
+	Gets called by Routine 0xC2EEE7
+	
+	Parameters:
+		A: Enemy's battle sprite index (offset 0x1C in the enemy_config_table)
+		
+	NOTES:
+	Looks like RAM 0xAAC6 is never read during battle? Haven't encountered anything
+	that reads it yet.
+*/
+
+
+
+//+-+-+-+-+- DEFINES -+-+-+-+-+
+// https://github.com/Herringway/ebsrc/blob/master/src/data/unknown/C3F8B1.asm
+define BATTLE_SPRITE_TILE_ARRANGEMENT_TABLE = 0xC3F8B1
+
+// https://github.com/Herringway/ebsrc/blob/master/src/data/unknown/C3F871.asm
+define BATTLE_SPRITE_OFFSET_BUFFER_TABLE = 0xC3F871
+
+/*
+	CoilSnake Load Table Hacking!!!
+	-------------------------------
+	Bacause coilsnake decides to write tables dynamically when compiling the
+	project, the table address may not be the same as the one shown in
+	EB ROM Explorer. So a solution is to move that part of the routine over
+	to the expanded area and to make the section where the game loads in that
+	dynamic table a small routine to jump into.
+	
+	What I've said might not make any sense whatsoever, but just know that
+	this is required to make this script work...
+*/
+define LOAD_BATTLE_SPRITE_TILE_ARR_TABLE_ROUTINE = 0xC2EB43
+define LOAD_BATTLE_SPRITE_POINTER_TABLE = 0xC2EBDF
+define LOAD_BATTLE_SPRITE_POINTER_TABLE_2 = 0xC2EE0B
+define LOAD_BATTLE_SPRITE_OFFSET_BUFFER_TABLE_ROUTINE = 0xC2EE6F
+define LOAD_BATTLE_SPRITE_GRAPHIC_SCRATCH_RAM_ADDR_ROUTINE = 0xC2EDF9
+define LOAD_BATTLE_SPRITE_GRAPHIC_SCRATCH_RAM_ADDR_ROUTINE_2 = 0xC2EE60
+
+/*
+	Each entry in BATTLE_SPRITE_POINTERS: 5 bytes total
+	0x00 - 0x03: Address to that battle sprite
+	0x04: size of that sprite
+*/
+define BATTLE_SPRITE_POINTERS = 0xCE62EE
+
+define Animation_Table = Animate_Enemy_Main.Animation_Table
+
+// A small table that gets the amount of Spritemaps needed to display that sprite
+Spritemap_Size_Table:
+"[00 01 02 02 04 08 10]"
+
+
+
+//+-+-+-+-+- ROM OVERWRITES -+-+-+-+-+
+// Inside routine 0xC2EAEA
+ROM[0xC2EAEA] = {
+	JSL (r_0xC2EAEA)
+	RTS
+}
+
+// For LOAD_BATTLE_SPRITE_TILE_ARR_TABLE_ROUTINE
+ROM[0xC2EB4D] = {
+	RTL
+	NOP
+}
+
+// For LOAD_BATTLE_SPRITE_POINTER_TABLE
+ROM[0xC2EBE3] = {
+	RTL
+}
+
+// For LOAD_BATTLE_SPRITE_POINTER_TABLE_2
+ROM[0xC2EE15] = {
+	RTL
+}
+
+// For LOAD_BATTLE_SPRITE_OFFSET_BUFFER_TABLE_ROUTINE
+ROM[0xC2EE73] = {
+	RTL
+}
+
+// For LOAD_BATTLE_SPRITE_GRAPHIC_SCRATCH_RAM_ADDR_ROUTINE
+ROM[0xC2EE03] = {
+	RTL
+}
+
+// For LOAD_BATTLE_SPRITE_GRAPHIC_SCRATCH_RAM_ADDR_ROUTINE_2
+ROM[0xC2EE6A] = {
+	RTL
+}
+
+
+
+//+-+-+-+-+- ASM ROUTINE -+-+-+-+-+
+r_0xC2EAEA:{
+  REP (0x31)
+  PHD 
+  PHA 
+  TDC 
+  ADC_i (0xFFD6)
+  TCD 
+  PLA 
+  
+  TAX 				// Transfer battle sprite index to X
+  STX_d (0x28)		// Store the battle sprite index into DPR 0x28
+  LDA_a (0xAAB4)	// Load in the amount of unique sprites in battle
+  ASL 				// Double it
+  TAX 				// Transfer it over to X
+  LDA_a (0xAAB2)	// Load in some data at this RAM address
+  STA_x (0xAAB6)	// Store it at some offset from 0xAAB6 using the unique sprite amount
+
+  LDA_a (0xAAB4)	// Load in the amount of unique sprites in battle
+  STA_d (0x04)		// Store it into DPR 0x04
+  ASL 				
+  ASL 
+  ADC_d (0x04)
+  ASL 
+  ASL 
+  ASL 
+  ASL 				// Multiply it by 80
+  CLC 				// Clear C bit in P register
+  ADC_i (0xAAD6)	// Add it to the starting address of the Spritemap table
+  STA_d (0x26)		// Store that enemy's Spritemap address to DPR 0x26
+  LDX_d (0x28)		// Load in the enemy's battle sprite index
+  TXA 				// Transfer it to A
+  DEC				// Decrement it
+  STA_d (0x04)		// Store it into DPR 0x04
+  STA_d (0x28)		// Store a copy of it into DPR 0x28
+  
+  LDY_i (0x0001)	// Load in 1
+  STY_d (0x24)		// Store it into DPR 0x24
+  TYA 				// Transfer it to A
+  STA_d (0x02)		// Store a copy of it into DPR 0x02
+  STA_d (0x22)		// Store another copy of it into DPR 0x22
+  
+  LDX_i (0x0000)	// Load in 0
+  STX_d (0x20)		// Store it into DPR 0x20 (Counter)
+  JMP (Label_1)		// Jump to a loop condition
+
+// Initializes data for each Spritemap per enemy
+Label_0:
+  REP (0x20)		// Make A register 16-bit
+  TXA 				// Transfer counter to A
+  STA_d (0x04)		// Store counter into DPR 0x04
+  ASL 		
+  ASL 				
+  ADC_d (0x04)		// Multiply it by 5
+  STA_d (0x1E)		// Store the offset for that Spritemap entry into DPR 0x1E
+  TAY 				// Transfer that offset to Y
+
+  SEP (0x20)		// Make A register 8-bit
+  LDA_8 (0xE0)		// Load in 0xE0
+  STA_diy (0x26)	// Store it into the Spritemap "y_offset" field
+  REP (0x20)		// Make A register 16-bit
+
+  //LDA_i (0xF8B1)
+  //STA_d (0x06)
+  //LDA_i (0x00C3)
+  //STA_d (0x08)		// ASMLoadAddress06(BATTLE_SPRITE_TILE_ARRANGEMENT_TABLE)
+  JSL (LOAD_BATTLE_SPRITE_TILE_ARR_TABLE_ROUTINE)
+  
+  // Initializes the "tile" field
+  LDA_d (0x1E)		// Load in the offset for that Spritemap entry
+  TAY 				// Transfer it to Y
+  INY 				// Increment it (Now looking at the "tile" field)
+  TXA 				// Transfer the counter to A
+  CLC 				// Clear C bit in P register
+  ADC_a (0xAAB2)	// Add the counter to the data stored at this address
+  ASL 				// Double it
+  PHA 				// Push it to the stack
+  
+  LDA_d (0x06)
+  STA_d (0x0A)
+  LDA_d (0x08)
+  STA_d (0x0C)		// Store a copy of the BATTLE_SPRITE_TILE_ARRANGEMENT_TABLE to DPR 0x0A and 0x0C
+  
+  PLA 				// Pull the data off of the stack
+  CLC 				// Clear C bit in P register
+  ADC_d (0x0A)		// Add it to the BATTLE_SPRITE_TILE_ARRANGEMENT_TABLE address
+  STA_d (0x0A)		// Store the new address back
+  
+  SEP (0x20)		// Make A register 8-bit
+  LDA_dl (0x0A)		// Load in that tile data from the table
+  STA_diy (0x26)	// Store it into the Spritemap's "tile" field
+  
+  // Initializes the "attr" field
+  LDA_8 (0x08)		// Load 8
+  PHA 				// Push it to the stack
+  REP (0x20)		// Make A register 16-bit
+  
+  TXA 				// Tansfer the counter to A
+  CLC 				// Clear C bit in P register
+  ADC_a (0xAAB2)	// Add it to the data stored in here
+  ASL 				// Double it
+  CLC 				// Clear C bit in P register
+  ADC_d (0x06)		// Add it to the original BATTLE_SPRITE_TILE_ARRANGEMENT_TABLE address
+  STA_d (0x06)		// Update the address
+  LDA_dl (0x06)		// Load in the tile data
+  SEP (0x10)		// Make X and Y register 8-bit
+  PLY 				// Pull 8 from the stack
+  JSL (0xC09251)	// Keep dividing the tile data by 2 until data in Y is 0
+  
+  SEP (0x20)		// Make A register 8-bit
+  STA_d (0x00)		// Store the result into DPR 0x00
+  LDA_a (0xAAB4)	// Load in the amount of unique enemies in battle
+  ASL 				// Double it
+  CLC 				// Clear C bit in P register
+  ADC_d (0x00)		// Add it to the the result of the division
+  CLC 				// Clear C bit in P register
+  ADC_8 (0x20)		// Add 0x20 to it
+  PHA 				// Push it to the stack
+  REP (0x20)		// Make A register 16-bit
+  
+  LDA_d (0x1E)		// Load in the offset for that Spritemap entry
+  REP (0x10)		// Make X and Y register 16-bit
+  TAY 				// Transfer offset to Y
+  INY 				
+  INY 				// Add 2 (offset pointing to "attr" field of Spritemap)
+  SEP (0x20)		// Make A register 8-bit
+  PLA 				// Pull the "attr" data from the stack
+  STA_diy (0x26)	// Store the "attr" data to the field
+  REP (0x20)		// Make A register 16-bit
+  
+  // Initializes the "x_offset" field
+  LDA_d (0x1E)		// Load in the offset for that Spritemap entry
+  TAY 				// Transfer offset to Y
+  INY 
+  INY 
+  INY 				// Add 3 (offset pointing to "x_offset" field)
+  SEP (0x20)		// Make A register 8-bit
+  LDA_8 (0xF0)		// Load in 0xF0
+  STA_diy (0x26)	// Store it into the "x_offset" field in the Spritemap
+  REP (0x20)		// Make A register 16-bit
+  
+  // Initializes the "bits" field
+  LDA_d (0x1E)		// Load in the offset for that Spritemap entry
+  TAY 				// Transfer offset to Y
+  INY 
+  INY 
+  INY 
+  INY 				// Add 4 (offset pointing to "bits" field)
+  SEP (0x20)		// Make A register 8-bit
+  LDA_8 (0x01)		// Load in 1 (Make the tile display 32x32 pixel)
+  STA_diy (0x26)	// Store it into the "bits" field
+  
+  // Loop iteration
+  LDX_d (0x20)		// Load in the counter
+  INX 				// Increment the counter
+  STX_d (0x20)		// Store the counter back
+
+// Loop Condition
+Label_1:
+  CPX_i (0x0010)	// Check if counter is 16 (Max amount of Spritemap per enemy)
+  BCS_a (Label_2)	// If counter >= 16, then branch
+  BEQ_a (Label_2)	// If counter == 16, then branch
+  JMP (Label_0)		// Else, loop
+
+//
+Label_2:
+  JSL (Get_Sprite_Canvas_Setting) // Needed to set DPR 0x02, 0x22, and 0x24 to some value  
+  JSL (Load_Sprite_Size)	// Gets the sprite size, NOT CANVAS SIZE
+
+  CMP_i (0x0002)	
+  BEQ_a (Label_4)	// Branch if 2 (64x32 size sprite)
+  CMP_i (0x0003)	
+  BEQ_a (Label_5)	// Branch if 3 (32x64 size sprite)
+  CMP_i (0x0004)
+  BEQ_a (Label_6)	// Branch if 4 (64x64 size sprite)
+  CMP_i (0x0005)
+  BEQ_a (Label_7)	// Branch if 5 (128x64 size sprite)
+  CMP_i (0x0006)
+  BNE_a (Label_3)	// Branch if 6 (128x128 size sprite)
+  JMP (Label_8)
+
+Label_3:
+  JMP (Label_9)		// Branch (32x32 size sprite)
+
+// For 64x32 sprites
+Label_4:
+  SEP (0x20)		// Make A register 8-bit
+  LDA_8 (0xE0)		// Load in 0xE0
+  LDY_i (0x0003)	// Load in 3
+  STA_diy (0x26)	// Store 0xE0 into the current Spritemap's "x_offset" field
+  LDX_d (0x26)		// Load in the address of the current Spritemap
+  STZ_x (0x0008)	// Store 0 into the next Spritemap's "x_offset" field
+  JMP (Label_9)		// Branch
+
+// For 32x64 sprites
+Label_5:
+  SEP (0x20)		// Make A register 8-bit
+  LDA_8 (0xC0)		// Load in 0xC0
+  STA_di (0x26)		// Store 0xC0 into the current Spritemap's "y_offset" field
+  JMP (Label_9)		// Branch
+
+// For 64x64 sprites
+Label_6:
+  SEP (0x20)		// Make A register 8-bit
+  LDA_8 (0xC0)		// Load in 0xC0
+  LDY_i (0x0005)	// Load in 5
+  STA_diy (0x26)	// Store 0xC0 into the next Spritemap's "y_offset" field
+  STA_di (0x26)		// Store 0xC0 into the current Spritemap's "y_offset" field
+  
+  LDA_8 (0xE0)		// Load 0xE0
+  LDY_i (0x000D)	// Load in 13
+  STA_diy (0x26)	// Store it into the 2rd next Spritemap's "x_offset" field
+  LDY_i (0x0003)	// Load in 3
+  STA_diy (0x26)	// Store it into the current Spritemap's "x_offset" field
+  LDA_8 (0x00)		// Load in 0
+  LDY_i (0x0012)	// Load in 18
+  STA_diy (0x26)	// Store 0 into the 3th next Spritemap's "x_offset" field
+  LDY_i (0x0008)	// Load in 8
+  STA_diy (0x26)	// Store 0 into the next Spritemap's "x_offset" field 
+  JMP (Label_9)		// Branch
+
+// For 128x64 sprites
+Label_7:
+  SEP (0x20)
+  LDA_8 (0xC0)		// Load in 0xC0
+  LDY_i (0x000F)	// Load in 15
+  STA_diy (0x26)	// Store 0xC0 into the 3rd next Spritemap's "y_offset" field
+  LDY_i (0x000A)	// Load in 10
+  STA_diy (0x26)	// Store 0xC0 into the 2nd next Spritemap's "y_offset" field
+  LDY_i (0x0005)	// Load in 4
+  STA_diy (0x26)	// Store 0xC0 into the next Spritemap's "y_offset" field
+  STA_di (0x26)		// Store 0xC0 into the current Spritemap's "y_offset" field
+  
+  LDY_i (0x0017)	// Load in 23
+  STA_diy (0x26)	// Store 0xC0 into the 4th next Spritemap's "x_offset" field
+  LDY_i (0x0003)	// Load in 3
+  STA_diy (0x26)	// Store 0xC0 into the current Spritemap's "x_offset" field
+  LDA_8 (0xE0)		// Load in 0xE0
+  LDY_i (0x001C)	// Load in 28
+  STA_diy (0x26)	// Store 0xE0 into the 5th next Spritemap's "x_offset" field
+  LDY_i (0x0008)	// Load in 8
+  STA_diy (0x26)	// Store 0xE0 into the next Spritemap's "x_offset" field
+  LDA_8 (0x00)		// Load in 0
+  LDY_i (0x0021)	// Load in 33
+  STA_diy (0x26)	// Store 0 into the 6th next Spritemap's "x_offset" field
+  LDY_i (0x000D)	// Load in 13
+  STA_diy (0x26)	// Store 0 into the 2nd next Spritemap's "x_offset" field
+  LDA_8 (0x20)		// Load in 0x20
+  LDY_i (0x0026)	// Load in 38
+  STA_diy (0x26)	// Store 0x20 into the 7th next Spritemap's "x_offset" field
+  LDY_i (0x0012)	// Load in 18
+  STA_diy (0x26)	// Store 0x20 into the 3rd next Spritemap's "x_offset" field
+  JMP (Label_9)		// Branch
+
+// For 128x128 sprites
+Label_8:
+  SEP (0x20)
+  LDA_8 (0xA0)
+  LDY_i (0x000F)
+  STA_diy (0x26)
+  LDY_i (0x000A)
+  STA_diy (0x26)
+  LDY_i (0x0005)
+  STA_diy (0x26)
+  STA_di (0x26)
+  LDA_8 (0xC0)
+  LDY_i (0x0023)
+  STA_diy (0x26)
+  LDY_i (0x001E)
+  STA_diy (0x26)
+  LDY_i (0x0019)
+  STA_diy (0x26)
+  LDY_i (0x0014)
+  STA_diy (0x26)
+  LDX_d (0x26)
+  STZ_x (0x004B)
+  LDX_d (0x26)
+  STZ_x (0x0046)
+  LDX_d (0x26)
+  STZ_x (0x0041)
+  LDX_d (0x26)
+  STZ_x (0x003C)
+  LDY_i (0x003F)
+  STA_diy (0x26)
+  LDY_i (0x002B)
+  STA_diy (0x26)
+  LDY_i (0x0017)
+  STA_diy (0x26)
+  LDY_i (0x0003)
+  STA_diy (0x26)
+  LDA_8 (0xE0)
+  LDY_i (0x0044)
+  STA_diy (0x26)
+  LDY_i (0x0030)
+  STA_diy (0x26)
+  LDY_i (0x001C)
+  STA_diy (0x26)
+  LDY_i (0x0008)
+  STA_diy (0x26)
+  LDX_d (0x26)
+  STZ_x (0x0049)
+  LDX_d (0x26)
+  STZ_x (0x0035)
+  LDX_d (0x26)
+  STZ_x (0x0021)
+  LDX_d (0x26)
+  STZ_x (0x000D)
+  LDA_8 (0x20)
+  LDY_i (0x004E)
+  STA_diy (0x26)
+  LDY_i (0x003A)
+  STA_diy (0x26)
+  LDY_i (0x0026)
+  STA_diy (0x26)
+  LDY_i (0x0012)
+  STA_diy (0x26)
+
+/*
+	For 32x32 sprites:
+	- DPR 0x02 = 1, DPR 0x22 = 1, DPR 0x24 = 1
+	
+	For 64x32 sprites:
+	- DPR 0x02 = 2, DPR 0x22 = 2, DPR 0x24 = 1
+	
+	For 32x64 sprites:
+	- DPR 0x02 = 1, DPR 0x22 = 1, DPR 0x24 = 2
+	
+	For 64x64 sprites:
+	- DPR 0x02 = 2, DPR 0x22 = 2, DPR 0x24 = 2
+	
+	For 128x64 sprites:
+	- DPR 0x02 = 4, DPR 0x22 = 4, DPR 0x24 = 2
+	
+	For 128x128 sprites:
+	- DPR 0x02 = 4, DPR 0x22 = 4, DPR 0x24 = 4
+	
+	DPR 0x02: How many 32x32 pixel tiles across
+	DPR 0x22: Mirror of DPR 0x02
+	DPR 0x24: How many 32x32 pixel tiles down
+*/
+
+Label_9:  
+  LDY_i (0x0003)	// Load in the sprite size
+  JSL (Get_Data_From_Animation_Table)
+  BEQ_a (Label_9_Ignore)  // Branch if there is no setting for that enemy
+  CMP_i (0x0003)	// Check if it's a 32x64 sprite
+  BEQ_a (Correct_it_1)
+  CMP_i (0x0005)	// Check if it's a 128x64 sprite
+  BEQ_a (Correct_it_2)
+  //CMP_i (0x0006)	// Check if it's a 128x128 sprite
+  //BEQ_a (Correct_it_3)
+  BRA_a (Label_9_Continue)	//If not any of these, then it's a correct sprite
+  
+  Correct_it_1:
+    LDA_i (0x0002)
+	BRA_a (Label_9_Continue)
+	
+  Correct_it_2:
+    LDA_i (0x0008)
+	BRA_a (Label_9_Continue)
+	
+  //Correct_it_3:
+  //  LDA_i (0x0010)
+  //  BRA_a (Label_9_Continue)
+  
+Label_9_Ignore:
+  LDY_d (0x24)		// Load in data at DPR 0x24
+  REP (0x20)		// Make A register 16-bit
+  LDA_d (0x02)		// Load in data at DPR 0x02
+  JSL (0xC09032)	// JSL (Mult_YxA)
+
+Label_9_Continue:  
+  STA_d (0x04)		// Store result into DPR 0x04
+  ASL 
+  ASL 
+  ADC_d (0x04)		// Multiply it by 5
+
+  TAY 				// Transfer it to Y
+  DEY 				// Decrement it
+  SEP (0x20)		// Make A register 8-bit
+  LDA_8 (0x81)		// Load in 0x81 (Data to signal end of drawing sprite)
+  STA_diy (0x26)	// Store it into the last Spritemap's "bits" field
+  REP (0x20)		// Make A register 16-bit
+
+  
+  // Right here we have already set 0x81 to the last Spritemap,
+  // so now we need to copy the "tile" and "attr" data from the 
+  // vanilla Spritemap to our new Spritemap
+  LDA_a (0xAAB4)	// Load in the amount of unique sprites in battle
+  STA_d (0x04)		// Store it into DPR 0x04
+  ASL 				
+  ASL 
+  ADC_d (0x04)
+  ASL 
+  ASL 
+  ASL 
+  ASL 			// Multiply it by 80
+  CLC 			// Clear C bit in P register
+  ADC_i (0xAAD6)	// Add it to the starting address of the Spritemap table
+  STA_d (0x04)	// Store our enemy's starting Spritemap table to DPR 0x04
+  
+  LDY_i (0x0003)	//
+  JSL (Get_Data_From_Animation_Table)
+  CMP_i (0x0003)	// Check if it's a 32x64 sprite
+  BEQ_a (Is_32x64)	// Branch if so
+  CMP_i (0x0004)    // Check if it's a 64x64 sprite
+  BEQ_a (Is_64x64)  // Branch if so
+  CMP_i (0x0005)	// Check if it's a 128x64 sprite
+  BEQ_a (Is_128x64)	// Branch if so
+  //CMP_i (0x0006)	// Check if it's a 128x128 sprite
+  //BEQ_a (Is_128x128)// Branch if so
+  BRA_a (Label_9_Continue_2) // Else, just run the routine like normal
+  
+  Is_32x64:	
+	LDY_i (0x0004)	// Load in our canvas size
+	JSL (Get_Data_From_Animation_Table)
+	CMP_i (0x0004)  // Check if the canvas size is 64x64
+	BEQ_a (Is_3_4)  // Branch if so
+    CMP_i (0x0005)	// Check if the canvas size is 128x64
+    BEQ_a (Is_3_5)  // Branch if so
+    CMP_i (0x0006)	// Check if the canvas size is 128x128
+    BEQ_a (Is_3_6)  // Branch if so
+    BRA_a (Label_9_Continue_2) // Else, just run the routine like normal
+
+    Is_3_4:
+      LDX_d (0x04)	// Load in our enemy's starting Spritemap table
+	  LDA_x (11)	// Load in our correct "tile" and "attr" fields from the other Spritemap
+	  STA_x (6)     // Store it into our end Spritemap's "tile" and "attr" fields
+	  BRA_a (Label_9_Continue_2)
+
+	Is_3_5:
+	Is_3_6:
+	  LDX_d (0x04)  // Load in our enemy's starting Spritemap table
+	  LDA_x (21)
+	  STA_x (6)
+	  BRA_a (Label_9_Continue_2)
+
+  Is_64x64:
+	Is_4_5:
+	Is_4_6:
+	  LDX_d (0x04)  // Load in our enemy's starting Spritemap table
+	  LDA_x (21)
+	  STA_x (11)
+	  LDA_x (26)
+	  STA_x (16)
+	  BRA_a (Label_9_Continue_2)
+
+
+  // We technically don't need to do anything here
+  // since the first frame of the sprite is placed
+  // correctly, just adding the 0x80 to the last Spritemap
+  // should be sufficient enough
+  Is_128x64:
+    //LDA_i (0x0004)
+	//JSL (Get_Data_From_Animation_Table)
+	//CMP_i (0x0006)
+	//BEQ_a (Is_5_6)
+	//BRA_a (Label_9_Continue_2)
+	
+	Is_5_6:
+
+
+  
+Label_9_Continue_2:
+  LDA_a (0xAAB4)	// Load in the amount of unique sprites
+  STA_d (0x04)		// Store that into DPR 0x04
+  ASL 
+  ASL 
+  ADC_d (0x04)
+  ASL 
+  ASL 
+  ASL 
+  ASL 				// Multiply it by 80 (offset for the enemy's Spritemap array)
+  STA_d (0x1E)		// Store result into DPR 0x1E
+  LDA_i (0xAC16)	// Load the address where the darkened Spritemap is at
+  STA_d (0x26)		// Store the address into DPR 0x26
+  LDA_d (0x1E)		// Load in the offset
+  CLC 				// Clear C bit in P register
+  ADC_i (0xAAD6)	// Add the offset to the normal Spritemap address
+  STA_d (0x06)		// Store the enemy's Spritemap address to DPR 0x06
+  PHB 				// Push Data Bank Register's data to stack
+  SEP (0x20)		// Make A register 8-bit
+  PLA 				// Pull Data Bank Register's data from stack
+  STA_d (0x08)		// Store Data Bank Register's data to DPR 0x08
+  STZ_d (0x09)		// Store 0x00 to DPR 0x09
+  REP (0x20)		// Make A register 16-bit
+  LDA_d (0x06)
+  STA_d (0x0E)
+  LDA_d (0x08)
+  STA_d (0x10)		// Copy the enemy's Spritemap address to DPR 0x0E and 0x10
+  LDX_i (0x0050)	// Load in 80 (Size of each entry in the Spritemap table)
+  LDA_d (0x1E)		// Load in the offset
+  CLC 				// Clear C bit in P register
+  ADC_d (0x26)		// Add the darkened Spritemap address to the offset
+  JSL (0xC08ED2)	// JSL (MEMCPY_A) (Copy data from normal Spritemap to darkened Spritemap)
+  
+  LDA_a (0xAAB4)	// Load in the amount of unique enemies
+  STA_d (0x04)		// Store it into DPR 0x04
+  ASL 		
+  ASL 
+  ADC_d (0x04)
+  ASL 
+  ASL 
+  ASL 
+  ASL 				// Multiply it by 80
+  CLC 				// Clear C bit in P register
+  ADC_d (0x26)		// Add it to the darkened Spritemap address
+  STA_d (0x1E)		// Store the enemy's darkened Spritemap to DPR 0x1E
+  LDX_i (0x0000)	// Load in 0 (Counter)
+  BRA_a (Label_11)  // Branch 
+
+// Changes the palette for the sprites in the darkened Spritemap table
+Label_10:
+  REP (0x20)		// Make A register 16-bit
+  TXA 				// Copy counter to A
+  STA_d (0x04)		// Store counter to DPR 0x04
+  ASL 			
+  ASL 
+  ADC_d (0x04)		// Multiply it by 5
+  STA_d (0x02)		// Store it into DPR 0x02
+  INC_d (0x02)		
+  INC_d (0x02)		// Add 2 (offset pointing to "attr" field)
+  LDA_d (0x1E)		// Load in the enemy's darkened Spritemap
+  CLC 				// Clear C bit in P register
+  ADC_d (0x02)		// Add the counter to the darkened Spritemap address
+  STA_d (0x20)		// Store the new address to DPR 0x20
+  SEP (0x20)		// Make A register 8-bit
+  LDA_di (0x20)		// Load in the "attr" field of that Spritemap
+  CLC 				// Clear C bit in P register
+  ADC_8 (0x08)		// Add 8 to the "attr" field (Makes the palette dark)
+  STA_di (0x20)		// Store it back into the "attr" field
+  INX 				// Increment the counter
+
+// Loop Condition
+Label_11:
+  CPX_i (0x0010)	// Check counter against the Spritemap size
+  BCC_a (Label_10)	// If counter < Spritemap size, loop
+  
+  // Else
+  REP (0x20)		// Make A register
+  LDA_d (0x22)		// Load in the setting data for that sprite size
+  STA_d (0x02)		// Store a copy into DPR 0x02
+  
+  SEP (0x20)		// Make A register 8-bit
+  LDX_a (0xAAB4)	// Load in the unique enemy count
+  STA_x (0xAAC6)	// Store that byte into the array at 0xAAC6
+  LDA_d (0x24)		// Load in the data stored in DPR 0x24
+  STA_x (0xAACE)	// Store that data into the array at 0xAACE
+  REP (0x20)		// Make A register 16-bit
+  
+  INC_a (0xAAB4)	// Increment the unique enemies in battle
+  
+  LDA_i (0x8000)	
+  STA_d (0x06)		
+  LDA_i (0x007F)
+  STA_d (0x08)		// Load in the address to load sprite data to
+  //JSL (LOAD_BATTLE_SPRITE_GRAPHIC_SCRATCH_RAM_ADDR_ROUTINE)
+  
+  LDA_d (0x06)
+  STA_d (0x1A)
+  LDA_d (0x08)
+  STA_d (0x1C)		// Copy the address to DPR 0x1A and 0x1C
+  
+  //LDA_i (0x62EE)
+  //STA_d (0x0A)
+  //LDA_i (0x00CE)  
+  //STA_d (0x0C)		// ASMLoadAddress0A(BATTLE_SPRITE_POINTERS)
+  JSL (LOAD_BATTLE_SPRITE_POINTER_TABLE_2)
+  
+  LDA_d (0x28)		// Load in the enemy's battle sprite index
+  STA_d (0x04)		// Store a copy of it into DPR 0x04
+  STA_d (0x04)		// Store it again, just to be sure??
+  ASL 				
+  ASL 
+  ADC_d (0x04)		// Multiply it by 5
+  CLC 
+  ADC_d (0x0A)		// Add the BATTLE_SPRITE_POINTERS address to it
+  STA_d (0x0A)		// Update the address to point to that enemy's specific entry 
+  LDY_i (0x0002)	// Load in 2
+  LDA_dly (0x0A)	// Load the upper short address where the enemy's sprite is located at in ROM
+  TAY 				// Transfer that upper short address to Y
+  LDA_dl (0x0A)		// Load the lower short address where the enemy's sprite is located at in ROM 
+  STA_d (0x06)		// Store the lower short into DPR 0x06
+  STY_d (0x08)		// Store the higher short into DPR 0x08
+  
+  LDA_d (0x06)
+  STA_d (0x0E)
+  LDA_d (0x08)
+  STA_d (0x10)		// Copy the address to DPR 0x0E and 0x10
+  
+  LDA_d (0x1A)
+  STA_d (0x06)
+  LDA_d (0x1C)
+  STA_d (0x08)		// Copy the address of 0x7F8000 to DPR 0x06 and 0x08
+  
+  LDA_d (0x06)
+  STA_d (0x12)
+  LDA_d (0x08)
+  STA_d (0x14)		// Make a copy of address 0x7F8000 to DPR 0x12 and 0x14
+  
+  JSL (0xC41A9E)	// Decompress data
+  
+  LDA_d (0x06)
+  STA_d (0x1A)
+  LDA_d (0x08)
+  STA_d (0x1C)		// Copy the address of 0x7F8000 to DPR 0x06 and 0x08
+  
+  LDY_d (0x24)		// Load in other setting for that sprite size
+  LDA_d (0x02)		// Load in the first setting of that sprite size
+  JSL (0xC09032)	// JSL (Mult_YxA)
+  TAY 				// Transfer result to Y (Counter)
+  JMP (Label_17)	// Jump to loop condition
+
+Label_12:
+  LDA_i (0x0000)	
+  STA_d (0x0A)
+  LDA_i (0x007F)
+  STA_d (0x0C)	// Store address 0x7F0000 to DPR 0x0A and 0x0C 
+  //JSL (LOAD_BATTLE_SPRITE_GRAPHIC_SCRATCH_RAM_ADDR_ROUTINE_2)
+  
+  LDA_a (0xAAB2)	// Load in the data store in here
+  ASL 				// Double it
+  TAX 				// Transfer it to X
+  
+  //LDA_xl (0xC3F871)	// LDA_xl (BATTLE_SPRITE_OFFSET_BUFFER_TABLE)
+  JSL (LOAD_BATTLE_SPRITE_OFFSET_BUFFER_TABLE_ROUTINE)
+  
+  CLC 				// Clear C bit in P register
+  ADC_d (0x0A)		// Add the offset address to the address in DPR 0x0A
+  STA_d (0x0A)		// Update the addres
+  
+  INC_a (0xAAB2)	// Increment the data stored at this address
+  
+  LDA_i (0x0000)	// Load in 0
+  STA_d (0x20)		// Store it into DPR 0x20
+  
+  BRA_a (Label_16)	// Branch to inner-inner loop condition
+
+Label_13:
+  LDA_d (0x0A)		
+  STA_d (0x06)
+  LDA_d (0x0C)
+  STA_d (0x08)		// Copy the decompiled sprite graphic address to DPR 0x06
+  
+  LDA_d (0x06)
+  STA_d (0x16)
+  LDA_d (0x08)
+  STA_d (0x18)		// Make a copy of it into DPR 0x16
+  
+  LDX_i (0x0000)	// Load in our counter
+  BRA_a (Label_15)	// Loop
+
+Label_14:
+  SEP (0x20)		// Make A register 8-bit
+  LDA_dl (0x1A)		// Load in data stored at the address in DPR 0x1A
+  STA_dl (0x06)		// Store the data to the address stored at DPR 0x06
+  
+  REP (0x20)		// Make A register 16-bit
+  
+  LDA_d (0x1A)
+  STA_d (0x06)
+  LDA_d (0x1C)
+  STA_d (0x08)		// Copy the sprite scratch address to DPR 0x06
+  
+  INC_d (0x06)		// Increment that address
+  
+  LDA_d (0x06)
+  STA_d (0x1A)
+  LDA_d (0x08)
+  STA_d (0x1C)		// Copy the address back to DPR 0x1A
+  
+  LDA_d (0x16)
+  STA_d (0x06)
+  LDA_d (0x18)
+  STA_d (0x08)		// Copy the decompiled sprite graphic address to DPR 0x06
+  
+  INC_d (0x06)		// Increment the address
+  
+  LDA_d (0x06)
+  STA_d (0x16)
+  LDA_d (0x08)
+  STA_d (0x18)		// Store the address back into DPR 0x16
+  
+  INX 
+
+Label_15:
+  CPX_i (0x0080)	// Check the counter against 0x0080
+  BCC_a (Label_14)	// If counter < 0x0080, then loop
+  
+  // Else
+  LDA_i (0x0200)	// Go to the next row of the VRAM Tiles
+  CLC 
+  ADC_d (0x0A)
+  STA_d (0x0A)		// Update the Decompiled enemy spirte graphic address
+  LDA_d (0x20)
+  INC 
+  STA_d (0x20)		// Increment the counter
+
+Label_16:
+  CMP_i (0x0004)	// Check if we are inbetween 0 and 3 (Rows in VRAM)
+  BCC_a (Label_13)	// Loop if we are under 4
+
+// Loop Condition
+Label_17:
+  TYX 				// Transfer counter to X
+  DEY 				// Decrement the counter
+  CPX_i (0x0000)	// Check if counter is 0
+  BEQ_a (Label_18)	// If counter == 0, then end
+  JMP (Label_12)	// Else, loop
+
+Label_18:
+  
+  PLD 
+  RTL 
+}
+
+//+-+-+-+-+- ASM HELPER ROUTINES -+-+-+-+-+
+/*
+	This part of the routine loads in the sprite size of the sprite itself.
+	However, if this loads in an enemy with an animation setting in the
+	Animate_Enemy_Main file, then it loads in the animation canvas.
+	So we need to check whether or not the enemy is set in the
+	Animate_Enemy_Main script.
+*/
+Load_Sprite_Size:{
+	LDY_i (0x0003)	// Get the sprite size
+	JSL (Get_Data_From_Animation_Table)
+	BEQ_a (Old_Code)// If there isn't a setting for that enemy, then run the old code
+	
+	// Else, we insert our own sprite size
+	BRA_a (Return)
+	
+Old_Code:
+	LDA_d (0x28)	// Load in the enemy battle sprite index
+	STA_d (0x04)
+	ASL
+	ASL
+	ADC_d (0x04)	// Multiply it by 8
+	INC
+	INC
+	INC
+	INC				// Add 4
+	TAX				// Transfer it to X
+	JSL (LOAD_BATTLE_SPRITE_POINTER_TABLE)	// Loads in the battle sprite size for regular EB
+	
+Return:
+	AND_i (0x00FF)
+	RTL
+}
+
+/*
+	This routine sets the sprite settings for the enemy sprite canvas
+	0x02 = How many multiple of 32 pixels on x-axis (from left to right)
+	0x22 = Mirror of 0x02
+	0x24 = How many multiple of 32 pixels on y-axis (from up to down)
+*/
+Get_Sprite_Canvas_Setting:{
+	LDY_i (0x0004)	// Get canvas size for the current sprite
+	JSL (Get_Data_From_Animation_Table)
+	BEQ_a (Old_Code)// If there isn't a setting for that enemy, then run the old code
+	
+	// Else, we insert our own sprite size
+	BRA_a (Check)
+	
+Old_Code:
+	LDA_d (0x28)	// Load in the enemy battle sprite index
+	STA_d (0x04)
+	ASL
+	ASL
+	ADC_d (0x04)	// Multiply it by 8
+	INC
+	INC
+	INC
+	INC				// Add 4
+	TAX				// Transfer it to X
+	JSL (LOAD_BATTLE_SPRITE_POINTER_TABLE)	// Loads in the battle sprite size for regular EB
+	
+Check:
+	AND_i (0x00FF)	// Get low byte
+	
+	CMP_i (SIZE_64x32)
+	BEQ_a (Get_Size_64x32)
+	CMP_i (SIZE_32x64)
+	BEQ_a (Get_Size_32x64)
+	CMP_i (SIZE_64x64)
+	BEQ_a (Get_Size_64x64)
+	CMP_i (SIZE_128x64)
+	BEQ_a (Get_Size_128x64)
+	CMP_i (SIZE_128x128)
+	BEQ_a (Get_Size_128x128)
+	BRA_a (Return)
+	
+Get_Size_64x32:
+	LDA_i (0x0002)
+	STA_d (0x02)
+	STA_d (0x22)
+	BRA_a (Return)
+	
+Get_Size_32x64:
+	LDA_i (0x0002)
+	STA_d (0x24)
+	BRA_a (Return)
+	
+Get_Size_64x64:
+	LDA_i (0x0002)
+	STA_d (0x02)
+	STA_d (0x22)
+	STA_d (0x24)
+	BRA_a (Return)
+	
+Get_Size_128x64:
+	LDA_i (0x0002)
+	STA_d (0x24)
+	
+	INC
+	INC
+	STA_d (0x02)
+	STA_d (0x22)
+	BRA_a (Return)
+	
+Get_Size_128x128:
+	LDA_i (0x0004)
+	STA_d (0x02)
+	STA_d (0x22)
+	STA_d (0x24)
+	
+Return:
+	RTL
+}
+
+/*
+	Get data from the Animation_Table in the Animate_Enemy_Main.ccs file
+	
+	Parameters:
+	Y = the offset from the table you want to get data from
+*/ 
+Get_Data_From_Animation_Table:{
+	REP (0x20)		// Make A register 16-bit
+	
+	LDA_a (0xAAB4)	// Load in the unique sprite count
+	ASL
+	TAX
+	LDA_x (0xAABE)	// Load in the enemy ID
+	AND_i (0x00FF)	// Get low byte
+	ASL
+	ASL
+	ASL				// Multply it by 8
+	
+Inc_Loop:
+	CPY_i (0x0000)
+	BEQ_a (End_Inc_Loop)
+	
+	INC
+	DEY
+	BRA_a (Inc_Loop)
+	
+End_Inc_Loop:
+	TAX				// Transfer it to X
+	LDA_xl (Animation_Table)	// Load in the frames for that enemy
+	AND_i (0x00FF)	// Get low byte
+	RTL				// Return
+}

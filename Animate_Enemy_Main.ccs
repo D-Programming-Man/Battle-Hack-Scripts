@@ -1,0 +1,922 @@
+import asm65816
+import asmref
+import Animate_Enemy_Make_Enemy_Not_Homesick
+
+/*
+	REMEMBER:
+	---------
+	. Always set the Unknown value for the enemy in the enemy_configuration_table.yml file to be 0
+	  so that the animation starts on the 0th frame. If you don't set this value to 0, then part of your
+	  animated sprite will either be invisible or use another part of an enemy's sprite.
+	. Keep in mind of the sprite limit of your enemy battle sprites. You are using the SNES's hardware
+	  limiation so don't over do it. Some parts of a sprite may not show up because you might have 2 128x64
+	  enemy sprite show on screen and another animated sprite has their head cut off or is part of a glitched
+	  graphic.
+		
+	. Vitality Stat = Used by Enemy_Float script
+	. Homesickness Stat = Game Frame counter to tell when to animate that sprite
+	. IQ Stat = Current Frame Count for the sprite
+*/
+
+//+-+-+-+-+-+- DEFINES (DO NOT REDEFINE THESE VALUES) -+-+-+-+-+-+ 
+define SIZE_32x32 = 1
+define SIZE_64x32 = 2
+define SIZE_32x64 = 3
+define SIZE_64x64 = 4
+define SIZE_128x64 = 5
+define SIZE_128x128 = 6
+
+define normal_spritemap_table = 0xAAD6	// These aren't actually used.
+define dark_spritemap_table = 0xAC16	// They're here more for notes
+define spritemap_table_size = 0x0140	// than anything really...
+
+
+
+//+-+-+-+-+-+- COMMANDS AND TABLES -+-+-+-+-+-+
+command animated_sprite(id, frames, speed, sprite_size, canvas_size) "[{byte id} {byte frames} {byte speed} {byte sprite_size} {byte canvas_size} 00 00 00]"
+
+/*
+Here's what each of these fields mean:
+. id - The id of the enemy shown in the BattleSprites folder and in the enemy_configuration_table.yml file.
+       This doesn't do anything for the purpose of this script but to keep track of what enemy you're configuring.
+. frames - How many frames of animation does this sprite use within their canvas (more on canvas later).
+           Eg. 4 in this field means that this enemy uses 4 frames of animation
+. speed - How fast does this enemy take to get to the next animation frame in In-Game frames.
+          Eg. 15 in this field means that every 15 frames, the enemy will go to the next animation frame.
+. sprite_size - How large does this sprite take up on screen. This field can only use the sizes defined
+                from the DEFINES section (the section above)
+. canvas_size - How big does this enemy take to use up some or all of their animations.
+                This field can only use SIZE values that are defined in the DEFINES section above.
+				
+So say for example you want to have the Mobile Sprout to have 4 frames of animation. The Mobile Sprout's
+sprite dimensions are 32x32 and since we have 4 frames we will need to use the 64x64 canvas size. We want
+this guy to spin really fast so we'll set our speed value to 3 to update every 3 In-Game frames. How this
+would look like is (assuming that the Mobile Sprout is at index 9 in the enemy_configuration_table):
+
+animated_sprite(9, 4, 3, SIZE_32x32, SIZE_64x64)
+
+And that's it. You would now then draw your frames for the enemy and they will animate when you fight them.
+BUT, always set the Unknown field of that enemy to 0 in the enemy_configuration_table.yml file ALWAYS!!!
+I can't stress this enough since I forgot to do that multiple times while I was testing and wondering
+why somethings never worked.
+
+NOTE: DO NOT USE A SIZE_128x128 SPRITE! YOU CAN HAVE A SIZE_128x128 CANVAS, BUT NOT A SIZE_128x128 SPRITE!!!
+      This is partly due to a hardware limiation and how EB is coded. There is unfortunately no way to
+	  animate a SIZE_128x128 sprite.
+*/
+
+// DO NOT INSERT NEW IDs, JUST OVEWRITE THE ONES THAT ARE AVAILABLE BELOW!!!
+Animation_Table:
+animated_sprite(0, 0, 0, 0, 0)
+animated_sprite(1, 0, 0, 0, 0)
+animated_sprite(2, 0, 0, 0, 0)
+animated_sprite(3, 0, 0, 0, 0)
+animated_sprite(4, 0, 0, 0, 0)
+animated_sprite(5, 0, 0, 0, 0)
+animated_sprite(6, 0, 0, 0, 0)
+animated_sprite(7, 0, 0, 0, 0)
+animated_sprite(8, 0, 0, 0, 0)
+animated_sprite(9, 0, 0, 0, 0)
+animated_sprite(10, 0, 0, 0, 0)
+animated_sprite(11, 0, 0, 0, 0)
+animated_sprite(12, 0, 0, 0, 0)
+animated_sprite(13, 0, 0, 0, 0)
+animated_sprite(14, 0, 0, 0, 0)
+animated_sprite(15, 0, 0, 0, 0)
+animated_sprite(16, 0, 0, 0, 0)
+animated_sprite(17, 0, 0, 0, 0)
+animated_sprite(18, 0, 0, 0, 0)
+animated_sprite(19, 0, 0, 0, 0)
+animated_sprite(20, 0, 0, 0, 0)
+animated_sprite(21, 0, 0, 0, 0)
+animated_sprite(22, 8, 0, 0, 0)
+animated_sprite(23, 0, 0, 0, 0)
+animated_sprite(24, 0, 0, 0, 0)
+animated_sprite(25, 0, 0, 0, 0)
+animated_sprite(26, 0, 0, 0, 0)
+animated_sprite(27, 0, 0, 0, 0)
+animated_sprite(28, 0, 0, 0, 0)
+animated_sprite(29, 0, 0, 0, 0)
+animated_sprite(30, 0, 0, 0, 0)
+animated_sprite(31, 0, 0, 0, 0)
+animated_sprite(32, 0, 0, 0, 0)
+animated_sprite(33, 0, 0, 0, 0)
+animated_sprite(34, 0, 0, 0, 0)
+animated_sprite(35, 0, 0, 0, 0)
+animated_sprite(36, 0, 0, 0, 0)
+animated_sprite(37, 0, 0, 0, 0)
+animated_sprite(38, 0, 0, 0, 0)
+animated_sprite(39, 0, 0, 0, 0)
+animated_sprite(40, 0, 0, 0, 0)
+animated_sprite(41, 0, 0, 0, 0)
+animated_sprite(42, 0, 0, 0, 0)
+animated_sprite(43, 0, 0, 0, 0)
+animated_sprite(44, 0, 0, 0, 0)
+animated_sprite(45, 0, 0, 0, 0)
+animated_sprite(46, 0, 0, 0, 0)
+animated_sprite(47, 0, 0, 0, 0)
+animated_sprite(48, 0, 0, 0, 0)
+animated_sprite(49, 0, 0, 0, 0)
+animated_sprite(50, 0, 0, 0, 0)
+animated_sprite(51, 0, 0, 0, 0)
+animated_sprite(52, 0, 0, 0, 0)
+animated_sprite(53, 0, 0, 0, 0)
+animated_sprite(54, 0, 0, 0, 0)
+animated_sprite(55, 0, 0, 0, 0)
+animated_sprite(56, 0, 0, 0, 0)
+animated_sprite(57, 0, 0, 0, 0)
+animated_sprite(58, 0, 0, 0, 0)
+animated_sprite(59, 0, 0, 0, 0)
+animated_sprite(60, 0, 0, 0, 0)
+animated_sprite(61, 0, 0, 0, 0)
+animated_sprite(62, 0, 0, 0, 0)
+animated_sprite(63, 0, 0, 0, 0)
+animated_sprite(64, 0, 0, 0, 0)
+animated_sprite(65, 0, 0, 0, 0)
+animated_sprite(66, 0, 0, 0, 0)
+animated_sprite(67, 0, 0, 0, 0)
+animated_sprite(68, 0, 0, 0, 0)
+animated_sprite(69, 0, 0, 0, 0)
+animated_sprite(70, 0, 0, 0, 0)
+animated_sprite(71, 0, 0, 0, 0)
+animated_sprite(72, 0, 0, 0, 0)
+animated_sprite(73, 0, 0, 0, 0)
+animated_sprite(74, 0, 0, 0, 0)
+animated_sprite(75, 0, 0, 0, 0)
+animated_sprite(76, 0, 0, 0, 0)
+animated_sprite(77, 0, 0, 0, 0)
+animated_sprite(78, 0, 0, 0, 0)
+animated_sprite(79, 0, 0, 0, 0)
+animated_sprite(80, 0, 0, 0, 0)
+animated_sprite(81, 0, 0, 0, 0)
+animated_sprite(82, 0, 0, 0, 0)
+animated_sprite(83, 0, 0, 0, 0)
+animated_sprite(84, 0, 0, 0, 0)
+animated_sprite(85, 0, 0, 0, 0)
+animated_sprite(86, 0, 0, 0, 0)
+animated_sprite(87, 0, 0, 0, 0)
+animated_sprite(88, 0, 0, 0, 0)
+animated_sprite(89, 0, 0, 0, 0)
+animated_sprite(90, 0, 0, 0, 0)
+animated_sprite(91, 0, 0, 0, 0)
+animated_sprite(92, 0, 0, 0, 0)
+animated_sprite(93, 0, 0, 0, 0)
+animated_sprite(94, 0, 0, 0, 0)
+animated_sprite(95, 0, 0, 0, 0)
+animated_sprite(96, 0, 0, 0, 0)
+animated_sprite(97, 0, 0, 0, 0)
+animated_sprite(98, 0, 0, 0, 0)
+animated_sprite(99, 0, 0, 0, 0)
+animated_sprite(100, 0, 0, 0, 0)
+animated_sprite(101, 0, 0, 0, 0)
+animated_sprite(102, 0, 0, 0, 0)
+animated_sprite(103, 0, 0, 0, 0)
+animated_sprite(104, 0, 0, 0, 0)
+animated_sprite(105, 0, 0, 0, 0)
+animated_sprite(106, 0, 0, 0, 0)
+animated_sprite(107, 0, 0, 0, 0)
+animated_sprite(108, 0, 0, 0, 0)
+animated_sprite(109, 0, 0, 0, 0)
+animated_sprite(110, 0, 0, 0, 0)
+animated_sprite(111, 0, 0, 0, 0)
+animated_sprite(112, 0, 0, 0, 0)
+animated_sprite(113, 0, 0, 0, 0)
+animated_sprite(114, 0, 0, 0, 0)
+animated_sprite(115, 0, 0, 0, 0)
+animated_sprite(116, 0, 0, 0, 0)
+animated_sprite(117, 0, 0, 0, 0)
+animated_sprite(118, 0, 0, 0, 0)
+animated_sprite(119, 0, 0, 0, 0)
+animated_sprite(120, 0, 0, 0, 0)
+animated_sprite(121, 0, 0, 0, 0)
+animated_sprite(122, 0, 0, 0, 0)
+animated_sprite(123, 0, 0, 0, 0)
+animated_sprite(124, 0, 0, 0, 0)
+animated_sprite(125, 0, 0, 0, 0)
+animated_sprite(126, 0, 0, 0, 0)
+animated_sprite(127, 0, 0, 0, 0)
+animated_sprite(128, 0, 0, 0, 0)
+animated_sprite(129, 0, 0, 0, 0)
+animated_sprite(130, 0, 0, 0, 0)
+animated_sprite(131, 0, 0, 0, 0)
+animated_sprite(132, 0, 0, 0, 0)
+animated_sprite(133, 0, 0, 0, 0)
+animated_sprite(134, 0, 0, 0, 0)
+animated_sprite(135, 0, 0, 0, 0)
+animated_sprite(136, 0, 0, 0, 0)
+animated_sprite(137, 0, 0, 0, 0)
+animated_sprite(138, 0, 0, 0, 0)
+animated_sprite(139, 0, 0, 0, 0)
+animated_sprite(140, 0, 0, 0, 0)
+animated_sprite(141, 0, 0, 0, 0)
+animated_sprite(142, 0, 0, 0, 0)
+animated_sprite(143, 0, 0, 0, 0)
+animated_sprite(144, 0, 0, 0, 0)
+animated_sprite(145, 0, 0, 0, 0)
+animated_sprite(146, 0, 0, 0, 0)
+animated_sprite(147, 0, 0, 0, 0)
+animated_sprite(148, 0, 0, 0, 0)
+animated_sprite(149, 0, 0, 0, 0)
+animated_sprite(150, 0, 0, 0, 0)
+animated_sprite(151, 0, 0, 0, 0)
+animated_sprite(152, 0, 0, 0, 0)
+animated_sprite(153, 0, 0, 0, 0)
+animated_sprite(154, 0, 0, 0, 0)
+animated_sprite(155, 0, 0, 0, 0)
+animated_sprite(156, 0, 0, 0, 0)
+animated_sprite(157, 0, 0, 0, 0)
+animated_sprite(158, 0, 0, 0, 0)
+animated_sprite(159, 0, 0, 0, 0)
+animated_sprite(160, 0, 0, 0, 0)
+animated_sprite(161, 0, 0, 0, 0)
+animated_sprite(162, 0, 0, 0, 0)
+animated_sprite(163, 0, 0, 0, 0)
+animated_sprite(164, 0, 0, 0, 0)
+animated_sprite(165, 0, 0, 0, 0)
+animated_sprite(166, 0, 0, 0, 0)
+animated_sprite(167, 0, 0, 0, 0)
+animated_sprite(168, 0, 0, 0, 0)
+animated_sprite(169, 0, 0, 0, 0)
+animated_sprite(170, 0, 0, 0, 0)
+animated_sprite(171, 0, 0, 0, 0)
+animated_sprite(172, 0, 0, 0, 0)
+animated_sprite(173, 0, 0, 0, 0)
+animated_sprite(174, 0, 0, 0, 0)
+animated_sprite(175, 0, 0, 0, 0)
+animated_sprite(176, 0, 0, 0, 0)
+animated_sprite(177, 0, 0, 0, 0)
+animated_sprite(178, 0, 0, 0, 0)
+animated_sprite(179, 0, 0, 0, 0)
+animated_sprite(180, 0, 0, 0, 0)
+animated_sprite(181, 0, 0, 0, 0)
+animated_sprite(182, 0, 0, 0, 0)
+animated_sprite(183, 0, 0, 0, 0)
+animated_sprite(184, 0, 0, 0, 0)
+animated_sprite(185, 0, 0, 0, 0)
+animated_sprite(186, 0, 0, 0, 0)
+animated_sprite(187, 0, 0, 0, 0)
+animated_sprite(188, 0, 0, 0, 0)
+animated_sprite(189, 0, 0, 0, 0)
+animated_sprite(190, 0, 0, 0, 0)
+animated_sprite(191, 0, 0, 0, 0)
+animated_sprite(192, 0, 0, 0, 0)
+animated_sprite(193, 0, 0, 0, 0)
+animated_sprite(194, 0, 0, 0, 0)
+animated_sprite(195, 0, 0, 0, 0)
+animated_sprite(196, 0, 0, 0, 0)
+animated_sprite(197, 0, 0, 0, 0)
+animated_sprite(198, 0, 0, 0, 0)
+animated_sprite(199, 0, 0, 0, 0)
+animated_sprite(200, 0, 0, 0, 0)
+animated_sprite(201, 0, 0, 0, 0)
+animated_sprite(202, 0, 0, 0, 0)
+animated_sprite(203, 0, 0, 0, 0)
+animated_sprite(204, 0, 0, 0, 0)
+animated_sprite(205, 0, 0, 0, 0)
+animated_sprite(206, 0, 0, 0, 0)
+animated_sprite(207, 0, 0, 0, 0)
+animated_sprite(208, 0, 0, 0, 0)
+animated_sprite(209, 0, 0, 0, 0)
+animated_sprite(210, 0, 0, 0, 0)
+animated_sprite(211, 0, 0, 0, 0)
+animated_sprite(212, 0, 0, 0, 0)
+animated_sprite(213, 0, 0, 0, 0)
+animated_sprite(214, 0, 0, 0, 0)
+animated_sprite(215, 0, 0, 0, 0)
+animated_sprite(216, 0, 0, 0, 0)
+animated_sprite(217, 0, 0, 0, 0)
+animated_sprite(218, 0, 0, 0, 0)
+animated_sprite(219, 0, 0, 0, 0)
+animated_sprite(220, 0, 0, 0, 0)
+animated_sprite(221, 0, 0, 0, 0)
+animated_sprite(222, 0, 0, 0, 0)
+animated_sprite(223, 0, 0, 0, 0)
+animated_sprite(224, 0, 0, 0, 0)
+animated_sprite(225, 0, 0, 0, 0)
+animated_sprite(226, 0, 0, 0, 0)
+animated_sprite(227, 0, 0, 0, 0)
+animated_sprite(228, 0, 0, 0, 0)
+animated_sprite(229, 0, 0, 0, 0)
+animated_sprite(230, 0, 0, 0, 0)
+
+
+
+// Don't worry about these commands here, they're here for some hardcoded things
+// that I need to keep track for the ASM code below. 
+command backtrack_entry(total_frame_count, backtrack_value) "[{byte backtrack_value} 00]"
+SIZE_32x32_Backtrack_Table:
+backtrack_entry(1, 0x00)
+backtrack_entry(2, 0x04)
+backtrack_entry(3, 0x08)
+backtrack_entry(4, 0x0C)
+backtrack_entry(5, 0x40)
+backtrack_entry(6, 0x44)
+backtrack_entry(7, 0x48)
+backtrack_entry(8, 0x4C)
+backtrack_entry(9, 0x80)
+backtrack_entry(10, 0x84)
+backtrack_entry(11, 0x88)
+backtrack_entry(12, 0x8C)
+backtrack_entry(13, 0xC0)
+backtrack_entry(14, 0xC4)
+backtrack_entry(15, 0xC8)
+backtrack_entry(16, 0xCC)
+
+SIZE_64x32_Backtrack_Table:
+backtrack_entry(1, 0x00)
+backtrack_entry(2, 0x08)
+backtrack_entry(3, 0x40)
+backtrack_entry(4, 0x48)
+backtrack_entry(5, 0x80)
+backtrack_entry(6, 0x88)
+backtrack_entry(7, 0xC0)
+backtrack_entry(8, 0xC8)
+
+SIZE_32x64_Backtrack_Table:
+backtrack_entry(1, 0x00)
+backtrack_entry(2, 0x04)
+backtrack_entry(3, 0x08)
+backtrack_entry(4, 0x0C)
+backtrack_entry(5, 0x80)
+backtrack_entry(6, 0x84)
+backtrack_entry(7, 0x88)
+backtrack_entry(8, 0x8C)
+
+SIZE_64x64_Backtrack_Table:
+backtrack_entry(1, 0x00)
+backtrack_entry(2, 0x08)
+backtrack_entry(3, 0x80)
+backtrack_entry(4, 0x88)
+
+SIZE_128x64_Backtrack_Table:
+backtrack_entry(1, 0x00)
+backtrack_entry(2, 0x80)
+
+
+
+//+-+-+-+-+-+- ANIMATE ENEMY ASM CODE -+-+-+-+-+-+
+Animate_Enemy:{	
+	REP (0x31)
+	PHD
+	TDC
+	ADC_i (0xFFCE)
+	TCD
+	
+	// Setup for the loop
+	LDA_i (0xA21C)	// Load in the very first enemy of battle
+	STA_d (0x02)	// Store into DPR 0x02
+	STZ_d (0x04)	// Store 0 into DPR 0x04 (Counter)
+	
+	STZ_d (0x16)	// These will be used to store our data from the 
+	STZ_d (0x18)	// Animation table
+	STZ_d (0x1A)	//
+	STZ_d (0x1C)	//
+	
+	STZ_d (0x22)	// These will be our enemy ID stack where
+	STZ_d (0x24)	// if an enemy as already been animated, then
+	STZ_d (0x26)	// there is no need to animate them again since
+	STZ_d (0x28)	// enemies share the same sprite.
+	
+Enemy_Check_Loop:
+	ASMLoadAddress0A(Animation_Table) // Load in the animation table to DPR 0x0A and 0x0C
+
+	// Condition to check each enemy
+	LDA_a (0x9F8A)	// Load the amount of enemies in battle
+	AND_i (0x00FF)	// Get low byte
+	CMP_d (0x04)	// Compare our counter with how many enemies are in battle
+	BEQ_a (Return)	// Return if our counter reaches to 0
+
+	LDX_d (0x02)	// Load in the enemy
+	LDA_x (0x0000)	// Get enemy's ID
+	BEQ_a (Enemy_Check_Continue) // If no enemy exist, then loop-continue
+	
+	// Else, store it
+	STA_d (0x06)	// Store enemy ID into DPR 0x06
+	
+	// Check to see if the enemy is in the animation table
+	ASL
+	ASL
+	ASL				// Multiply enemy ID by 8
+	STA_d (0x0E)	// Store the offset for the enemy into DPR 0x0E
+	
+	INC				// Increment offset by 1 to get the offset of the frame count for that enemy
+	TAY				// Transfer offset of frame count to Y register
+	LDA_dly (0x0A)	// Load in the frame count from the Animation_Table for that enemy
+	AND_i (0x00FF)	// Get low byte
+	BEQ_a (Enemy_Check_Continue)	// Branch if there is no animation for the current enemy and continue checking the other enemies
+	
+	// Load in the enemy ID
+	LDA_d (0x06)
+	
+	// Check if the enemy is in the stack variables DPR (0x22 - 0x28)
+	CMP_d (0x22)	// Check if the enemy is in the first stack variable
+	BEQ_a (Enemy_Check_Continue) // Don't animate the enemy if we already animated them
+	STA_d (0x22)	// Else, Store the enemy ID into the variable
+	BRA_a (Check_For_Animation)  // Go to the next check
+	
+	CMP_d (0x24)	// Check if the enemy is in the second stack variable
+	BEQ_a (Enemy_Check_Continue) // Don't animate the enemy if we already animated them
+	STA_d (0x24)	// Else, Store the enemy ID into the variable
+	BRA_a (Check_For_Animation)  // Go to the next check
+	
+	CMP_d (0x26)	// Check if the enemy is in the third stack variable
+	BEQ_a (Enemy_Check_Continue) // Don't animate the enemy if we already animated them
+	STA_d (0x26)	// Else, Store the enemy ID into the variable
+	BRA_a (Check_For_Animation)  // Go to the next check
+	
+	CMP_d (0x28)	// Check if the enemy is in the last stack variable
+	BEQ_a (Enemy_Check_Continue) // Don't animate the enemy if we already animated them
+	STA_d (0x28)	// Else, Store the enemy ID into the variable
+	
+Check_For_Animation:
+	// We need to check whether to animate that enemy right now
+	LDY_d (0x0E)	// Load in the offset
+	INY
+	INY				// Get the offset for frame rate
+	LDA_dly (0x0A)	// Get the frame rate for that enemy
+	AND_i (0x00FF)	// Get low byte
+	STA_d (0x18)	// Store the frame rate to DPR 0x18
+	
+	LDX_d (0x02)	// Load in the enemy
+	LDA_x (0x0031)	// Load in the enemy's IQ stat (enemy's frame delay)
+	AND_i (0x00FF)	// Get low byte
+	STA_d (0x16)	// Store a copy of it to DPR 0x1A
+	
+	LDA_d (0x18)	// Load in the frame rate
+	SEC				// Set C bit in P register
+	SBC_d (0x16)	// Subtract the frame rate of when the sprite is suppose to animate wtih the frame delay
+	AND_i (0x00FF)	// Get low byte
+	CMP_i (0x0000)	// Check if it's 0
+	BEQ_a (Do_Animation) //  If the result is the 0, then we are at the exact frame time to animate the sprite
+	
+	// If the checks above fails, then don't animate the sprite
+	BRA_a (Enemy_Check_Skip_Frame) // If we shouldn't animate the enemy, then don't animate them
+
+	// Only jump here when any check fails, otherwise use Enemy_Check_Continue
+Enemy_Check_Skip_Frame:
+	LDX_d (0x02)	// Load in the enemy
+	LDA_x (0x0031)	// Load in the enemy's IQ stat (enemy frame delay)
+	AND_i (0x00FF)	// Get low byte
+	INC				// Increment it
+	SEP (0x20)		// Make A register 8-bit
+	STA_x (0x0031)	// Store the new frame delay back into the enemy's IQ stat
+
+Enemy_Check_Continue:
+	REP (0x20)		// Make A register 16-bit
+	INC_d (0x04)	// Increment our current enemy amount counter
+	LDA_d (0x02)	// Load in the current enemy
+	CLC				// Clear C bit in P register
+	ADC_i (0x004E)	// Add the entry size for each enemy
+	STA_d (0x02)	// Store the next enemy back into DPR 0x02
+	BRA_a (Enemy_Check_Loop) // Check the next enemy
+	
+	// Else, animate them
+Do_Animation:
+	// Gets the enemy's total frame count
+	LDY_d (0x0E)	// Load in the enemy offset to the table
+	INY				// Increment it to get the offset of the total frame count
+	LDA_dly (0x0A)	// Get the total frame count
+	AND_i (0x00FF)	// Get low byte
+	DEC 			// Decrement the count
+	STA_d (0x16)	// Store total frame count into DPR 0x16
+	
+	// Gets the sprite size of the enemy
+	INY
+	INY				// Get the offset for enemy's actual sprite size
+	LDA_dly (0x0A)	// Get the enemy's actual sprite size
+	AND_i  (0x00FF)	// Get low byte
+	STA_d (0x18)	// Store sprite size to DPR 0x18
+	
+	// Gets the sprite canvas size of the enemy
+	INY
+	LDA_dly (0x0A)	// Get the enemy's canvas sprite size
+	AND_i  (0x00FF)	// Get low byte
+	STA_d (0x1A)	// Store into DPR 0x1A. We got everything we need from table
+	
+	// Gets the current frame count of the enemy
+	LDX_d (0x02)	// Load in the enemy
+	LDA_x (0x0022)	// Load in the enemy's Homesickness stat (enemy's current frame count)
+	AND_i (0x00FF)	// Get low byte
+	STA_d (0x1C)	// Store a copy of it to DPR 0x1A
+	
+	// Gets the Spritemap address for the enemy
+	LDX_d (0x02)	// Load in the enemy
+	LDA_x (0x0043)	// Load in the Spritemap index for that enemy
+	AND_i (0x00FF)	// Get low byte
+	STA_d (0x0A)	// Store Spritemap index to DPR 0x0A
+	ASL				// 2
+	ASL				// 4
+	CLC
+	ADC_d (0x0A)	// 5
+	ASL				// 10
+	ASL				// 20
+	ASL				// 40
+	ASL				// Multiply the Spritemap index by 80 to get the offset
+					// for that enemy's Spritemap address
+	CLC
+	ADC_i (0xAAD6)	// Add the offset to the start of the Spritemap address
+					// to get the enemy's Spritemap address
+	STA_d (0x1E)	// Store the enemy's Spritemap address to DPR 0x1E
+	
+	// Checks the enemy's sprite size
+	LDA_d (0x18)	// Load in the sprite size
+	CMP_i (SIZE_32x32)
+	BEQ_a (Is_size_32x32)
+	CMP_i (SIZE_64x32)
+	BEQ_a (Is_size_64x32)
+	CMP_i (SIZE_32x64)
+	BEQ_a (Is_size_32x64)
+	CMP_i (SIZE_64x64)
+	BEQ_a (Is_size_64x64)
+	CMP_i (SIZE_128x64)
+	BEQ_a (Is_size_128x64)
+	CMP_i (SIZE_128x128)
+	BEQ_a (Is_size_128x128)
+	BRA_a (Enemy_Check_Continue)
+	
+	Is_size_32x32:
+		LDA_d (0x16)		// Load in total_frame - 1
+		ASL					// Double it
+		TAX					// Transfer it to X
+		LDA_xl (SIZE_32x32_Backtrack_Table)	// Load in that enemy's backtrack value
+		STA_d (0x0A)		// Store it into DPR 0x0A
+	
+		LDA_i (0x0000)	// Load in our setting for this sprite size
+						// 2nd Lowest 4 bits tells us to skip how many 8x8 tiles vertical
+						// Lowest 4 bits tells us to skip how many 8x8 tiles horizontal
+		STA_d (0x20)	// Store it into DPR 0x20
+		
+		JSL (Change_Spritemap_Tile)
+		BRA_a (Advance_Frame)
+	
+	Is_size_64x32:
+		LDA_d (0x16)	// Load in total_frame - 1
+		ASL				// Double it
+		TAX				// Transfer it to X
+		LDA_xl (SIZE_64x32_Backtrack_Table)	// Load in that enemy's backtrack value
+		STA_d (0x0A)	// Store it into DPR 0x0A
+		LDA_i (0x0004)	// Load in our setting for this sprite size
+						// Second Lowest 4 bits tells us to skip how many 8x8 tiles vertical
+						// Lowest 4 bits tells us to skip how many 8x8 tiles horizontal
+		STA_d (0x20)	// Store it into DPR 0x20
+		
+		Is_Size_2_456_Loop:
+			JSL (Change_Spritemap_Tile)
+			
+			LDX_d (0x1E)	// Load the Spritemap address
+			LDA_x (0x0004)	// Load in the "bits" field of the Spritemap
+			INX
+			INX
+			INX
+			INX
+			INX				// Add 5 to the Spritemap address
+			STX_d (0x1E)	// Store the new Spritemap address to DPR 0x1E
+			
+			AND_i (0x0080)	// Get the ending bit flag of the previous Spritemap
+			BNE_a (Advance_Frame) // If the flag is set, then we are at the end of the Spritemap and so we need to set the system know we advanced the frame
+			BRA_a (Is_Size_2_456_Loop)	// Else, we update the next Spritemap
+	
+	Is_size_32x64:
+		LDA_d (0x16)	// Load in total_frame - 1
+		ASL				// Double it
+		TAX				// Transfer it to X
+		LDA_xl (SIZE_32x64_Backtrack_Table)	// Load in that enemy's backtrack value
+		STA_d (0x0A)	// Store it into DPR 0x0A
+		
+		LDA_i (0x0000)	// Load in our setting for this sprite size
+						// Second Lowest 4 bits tells us to skip how many 8x8 tiles vertical
+						// Lowest 4 bits tells us to skip how many 8x8 tiles horizontal
+		STA_d (0x20)	// Store it into DPR 0x20
+	
+		LDA_d (0x0004)	// Load in the offset value for the initial "tile" data
+		STA_d (0x2A)	// Store our initial "tile" data offset to DPR 0x2A
+	
+		LDA_d (0x1A)		// Load in the canvas size
+		CMP_i (SIZE_128x128)
+		BEQ_a (Is_Size_3_6)
+	
+		// Else, the canvas size is 64x64 or 128x64
+		Is_Size_3_45_Loop:
+			JSL (Change_Spritemap_Tile)				
+			
+			LDX_d (0x1E)	// Pull Spritemap address from stack
+			LDA_x (0x0004)	// Load in the "bits" field of the Spritemap
+			INX
+			INX
+			INX
+			INX
+			INX				// Add 5 to the Spritemap address
+			STX_d (0x1E)	// Store the new Spritemap address to DPR 0x1E
+			
+			AND_i (0x0080)	// Get the ending bit flag of the previous Spritemap
+			BNE_a (Advance_Frame) // If the flag is set, then we are at the end of the Spritemap and so we need to set the system know we advanced the frame
+			BRA_a (Is_Size_3_45_Loop)	// Else, we update the next Spritemap
+	
+		Is_Size_3_6:
+		Is_Size_3_6_Loop:
+			LDX_d (0x02)	// Load in the enemy
+			LDA_x (0x0022)	// Load in the enemy's homesickness stat (current frame for that sprite)
+			AND_i (0x00FF)	// Get low byte
+			CMP_i (0x0003)	// Check if we are at the half way point of the sprite frame for that canvas
+			BNE_a (Is_Size_3_6_Cont) // If we aren't then continue normally
+
+			LDA_i (0x0040)	// Else, make our change to skip 8 rows
+			STA_d (0x20)	// Store it to DPR 0x20
+			
+		Is_Size_3_6_Cont:
+			JSL (Change_Spritemap_Tile)					
+			
+			LDX_d (0x1E)	// Pull Spritemap address from stack
+			LDA_x (0x0004)	// Load in the "bits" field of the Spritemap
+			INX
+			INX
+			INX
+			INX
+			INX				// Add 5 to the Spritemap address
+			STX_d (0x1E)	// Store the new Spritemap address to DPR 0x1E
+			
+			AND_i (0x0080)	// Get the ending bit flag of the previous Spritemap
+			BNE_a (Advance_Frame) // If the flag is set, then we are at the end of the Spritemap and so we need to set the system know we advanced the frame
+			BRA_a (Is_Size_3_6_Loop)	// Else, we update the next Spritemap
+	
+	Is_size_64x64:
+		LDA_d (0x16)	// Load in total_frame - 1
+		ASL				// Double it
+		TAX				// Transfer it to X
+		LDA_xl (SIZE_64x64_Backtrack_Table)	// Load in that enemy's backtrack value
+		STA_d (0x0A)	// Store it into DPR 0x0A
+	
+		LDA_d (0x1A)		// Load in the canvas size
+		CMP_i (SIZE_128x64)
+		BEQ_a (Is_Size_4_5)
+		CMP_i (SIZE_128x128)
+		BEQ_a (Is_Size_4_6)
+		BRA_a (Enemy_Check_Continue)
+		
+		Is_Size_4_5:
+			LDA_i (0x0004)	// Load in our setting for this sprite size
+							// Second Lowest 4 bits tells us to skip how many 8x8 tiles vertical
+							// Lowest 4 bits tells us to skip how many 8x8 tiles horizontal
+			STA_d (0x20)	// Store it into DPR 0x20
+			
+		Is_Size_4_5_Main:
+			JSL (Change_Spritemap_Tile)				
+			
+			LDA_d (0x1E)	// Pull Spritemap address from stack
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)
+			
+			LDA_d (0x1E)	// Pull Spritemap address from stack
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)	
+			
+			LDA_d (0x1E)	// Pull Spritemap address from stack
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)	
+		
+			BRA_a (Advance_Frame) 
+	
+		Is_Size_4_6:
+			LDA_i (0x0004)	// Load in our setting for this sprite size
+							// Second Lowest 4 bits tells us to skip how many 8x8 tiles vertical
+							// Lowest 4 bits tells us to skip how many 8x8 tiles horizontal
+			STA_d (0x20)	// Store it into DPR 0x20
+			
+		Is_Size_4_6_Main:
+			LDX_d (0x02)	// Load in the enemy
+			LDA_x (0x0022)	// Load in the enemy's Homesickness stat (enemy frame count)
+			AND_i (0x00FF)	// Get low byte
+			CMP_i (0x0001)	// Check if we are half way done of animating the enemy
+			BNE_a (Is_Size_4_6_Cont) // If we aren't then continue normally
+
+			LDA_i (0x0074)	// Make our change to skip 4 rows
+			STA_d (0x20)	// Store it to DPR 0x20
+			
+		Is_Size_4_6_Cont:
+			JSL (Change_Spritemap_Tile)				
+			
+			LDA_d (0x1E)	// Pull Spritemap address from stack
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)
+			
+			LDA_d (0x1E)	// Pull Spritemap address from stack
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)	
+			
+			LDA_d (0x1E)	// Pull Spritemap address from stack
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)	
+		
+			BRA_a (Advance_Frame)
+	
+	Is_size_128x64:
+		LDA_d (0x16)	// Load in total_frame - 1
+		ASL				// Double it
+		TAX				// Transfer it to X
+		LDA_xl (SIZE_128x64_Backtrack_Table)	// Load in that enemy's backtrack value
+		STA_d (0x0A)	// Store it into DPR 0x0A
+	
+		Is_Size_5_6:
+			LDA_i (0x007C)	// Load in our setting for this sprite size
+							// Second Lowest 4 bits tells us to skip how many 8x8 tiles vertical
+							// Lowest 4 bits tells us to skip how many 8x8 tiles horizontal
+			STA_d (0x20)	// Store it into DPR 0x20
+			
+		Is_Size_5_6_Main:
+			// 1
+			JSL (Change_Spritemap_Tile)				
+			
+			// 2
+			LDA_d (0x1E)	// Load the Spritemap address
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)
+		
+			// 3
+			LDA_d (0x1E)	// Load the Spritemap address
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)	
+			
+			// 4
+			LDA_d (0x1E)	// Load the Spritemap address
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)
+			
+			// 5
+			LDA_d (0x1E)	// Load the Spritemap address
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)	
+			
+			// 6
+			LDA_d (0x1E)	// Load the Spritemap address
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)	
+			
+			// 7
+			LDA_d (0x1E)	// Load the Spritemap address
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)	
+			
+			// 8
+			LDA_d (0x1E)	// Load the Spritemap address
+			CLC				// Clear C bit in P register
+			ADC_i (0x0005)	// Add 5 to get the next Spritemap
+			STA_d (0x1E)	// Store it back
+			JSL (Change_Spritemap_Tile)	
+		
+			BRA_a (Advance_Frame) 
+		
+	// Currently not possible
+	Is_size_128x128:
+		BRA_a (Enemy_Check_Continue)
+	
+	Advance_Frame:
+		LDX_d (0x02)		// Load in the enemy
+		LDA_x (0x0022)		// Load in the enemy's Homesickness stat (enemy's frame count)
+		AND_i (0x00FF)		// Get low byte
+		CMP_d (0x16)		// Compare it against the total sprite frame
+		BCC_a (Inc_Frame)	// If it's less, then increment the sprite frame
+		
+		// Else we reset it
+		LDA_i (0xFFFF)		// Load in -1
+		
+	Inc_Frame:
+		INC					// Update the frame count	
+		SEP (0x20)			// Make A register 8-bit
+		STA_x (0x0022)		// Store only the frame count back
+		LDA_8 (0x00)		// Load 0
+		STA_x (0x0031)		// Store 0 into the enemy's IQ stat (enemy's frame delay)
+		REP (0x20)			// Make A register 16-bit
+		
+		BRA_a (Enemy_Check_Continue) // Check the next enemy
+	
+Return:
+	PLD
+	RTL
+}
+
+/*
+	This routine changes the tile and attr data fields of the Spritemap
+*/
+Change_Spritemap_Tile:{
+	LDA_d (0x1C)		// Load in the enemy's current sprite frame
+	CMP_d (0x16)		// Compare the current sprite frame with the total sprite frames
+	BCS_a (Zero_Frame) // If the current sprite frame  >= total sprite frame, then reset sprite
+	
+	// Else, we advance the frame
+	LDX_d (0x1E)		// Load in the enemy's current Spritemap entry
+	LDA_x (0x0001)		// Load in the "tile" and "attr" data fields
+	CLC
+	ADC_i (0x0004)		// Add 4 to advance the frame for that Spritemap
+	CLC
+	ADC_d (0x20)		// Add our settings to this Spritemap 
+	STA_d (0x30)		// Store the new tile and attr data to DPR 0x30
+	
+	AND_i (0x00FF)	// Get only the "tile" data
+	AND_i (0x0020)		// Get the second bit from the upper 4 bits
+	CMP_i (0x0020)		// Check if that bit is set
+	BNE_a (Check_If_Odd)// If not, then check if the the upper 4 bits is odd
+	
+	// Else, We need to erase some bits to "round down"
+	LDA_d (0x30)		// Load in the new tile and attr data
+	AND_i (0xFFCF)		// Get rid of the 3rd and 4th bits from the lower byte
+	STA_d (0x30)		// Store the new value back
+	BRA_a (Continue)
+	
+Check_If_Odd:
+	LDA_d (0x30)		// Load in the tile and attr data
+	AND_i (0x0010)		// Check if the "tile" is odd on the upper 4 bits
+	BEQ_a (Continue)	// If that bit isn't set, then we don't need to correct it
+	
+	// Else, this means we are showing an incomplete 32x32 enemy sub-sprite
+	// so we need to make sure the upper 4 bits has only their upper 2 bits set
+	// eg. 0b01010100 -> 0b10000100; We basically add 3 to the upper 4 bits
+	LDA_d (0x30)		// Load in the new "tile" and "attr" data
+	AND_i (0xFFCF)		// Clear some bits
+	CLC
+	ADC_i (0x0040)		// Add a bit
+	STA_d (0x30)		// Store the new correct tile data back
+	
+Continue:
+	LDA_d (0x30)		// Load in the new "tile" and "attr" data field
+	LDX_d (0x1E)		// Load in the enemy's current Spritemap address
+	STA_x (0x0001)		// Store the new "tile" and "attr" data field back
+		
+	TXA					// Transfer Spritemap address to A
+	CLC					// Clear C bit in P register
+	ADC_i (0x0140)		// Update it to the dark Spritemap entry address
+	TAX					// Transfer the new address to X
+		
+	LDA_d (0x30)		// Load in the new "tile" and "attr" data field
+	CLC
+	ADC_i (0x0800)		// Add the dark sprite setting to the new data
+	STA_x (0x0001)		// Store it to the dark Spritemap entry
+		
+	BRA_a (Return)		// Return
+
+Zero_Frame:		
+/*
+	New Idea:
+	. If there is a sprite that only utilize 3 frames, but encompasses a 4 total frame
+	canvas, then we need to adjust our original "tile" and "attr" values according
+	to the frames that the sprite utilizes rather than the canvas size.
+	. This basically means we need to check the total frames for that sprite and then
+	set some values for that enemy's settings
+	. The formula above will be much simplier, I think:
+	  - Formula: Spritemap_tile_attr_data - [DPR 0x0A] & 0xFFCC
+	  - DPR 0x0A = A byte that can have a combination of bits that are bitwise AND with 0xCC
+	  - The complete list for valid DPR 0x0A values are:
+		* [0x00, 0x04, 0x08, 0x0C, 0x40, 0x44, 0x48, 0x4C,
+		   0x80, 0x84, 0x88, 0x8C, 0xC0, 0xC4, 0xC8, 0xCC]
+		* 0xXY:
+		  ~ X = How many 8x8 tiles are we going up
+		  ~ Y = How many 8x8 tiles we are going left
+	  - See how OAM 8x8 tiles are displayed in MESEN-S emulator
+*/
+		
+	LDX_d (0x1E)		// Load in the enemy's Spritemap
+	LDA_x (0x0001)		// Load in the current "tile" and "attr" data
+	SEC					// Set C bit in P register
+	SBC_d (0x0A)		// Subtract it to get our initial "tile" and "attr" data
+	AND_i (0xFFCC)		// Filter only the "attr" data
+	STA_d (0x30)		// Store it into DPR 0x30
+	
+	LDX_d (0x1E)		// Load in the enemy's Spritemap
+	STA_x (0x0001)		// Store the enemy's initial frame data into the "tile" and "attr" ield
+		
+	TAY					// Transfer the initial frame data to Y
+	TXA					// Transfer the current Spritemap entry address to A
+	CLC					// Clear C bit in P register
+	ADC_i (0x0140)		// Update it to point to the dark Spritemap entry
+	TAX					// Transfer the updated Spritemap to X
+	TYA					// Transfer the initial frame data to A
+	CLC					// Clear C bit in P register
+	ADC_i (0x0800)		// Add the dark setting to the initial frame data
+	STA_x (0x0001)		// Store it into the dark Spritemap entry
+		
+Return:
+	RTL
+}

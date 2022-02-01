@@ -1,0 +1,29 @@
+import asm65816
+import asmref
+import Enemy_Float_Main
+import Animate_Enemy_Main
+
+/*
+	This script is the main entry point of executing code at each In-Game frame
+	in battle. The Enemy_Float and Animate_Enemy scripts requires this script
+	in order for those two to work.
+*/
+
+//+-+-+-+-+- DEFINES -+-+-+-+-+
+define Enemy_Float_Check = Enemy_Float_Main.Enemy_Float_Check
+define Animate_Enemy = Animate_Enemy_Main.Animate_Enemy
+
+//+-+-+-+-+- ROM OVERWRITES -+-+-+-+-+
+ROM[0xC2F902] = JSL (Enemy_Float_Proxy_2)
+
+//+-+-+-+-+- ASM CODE -+-+-+-+-+
+Enemy_Float_Proxy_2:{
+	// Run original code
+	JSL (0xC088B1)		// DO NOT REMOVE
+	
+	// Execute our code
+	JSL (Enemy_Float_Check)
+	JSL (Animate_Enemy)
+	
+	RTL
+}

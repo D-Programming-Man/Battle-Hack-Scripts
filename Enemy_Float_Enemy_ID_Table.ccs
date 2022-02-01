@@ -1,0 +1,73 @@
+import asm65816
+import asmref
+
+
+//-+-+-+-+-+ SCRIPT INFO +-+-+-+-+-
+/*
+	This allows you to choose which enemy will get the floating status effect when
+	you encounter them in battle. All you need to do is to include which enemy IDs 
+	will be checked when the game initializes the enemies.
+	
+	IMPORTANT:
+	----------
+	. The enemies need to have the "normal" initial status in the "enemy_configuration_table.yml" file
+	or else this script will skip them
+*/
+
+//-+-+-+-+-+ COMMANDS +-+-+-+-+-
+command Enemy_Float_Entry(enemy_id) "[{short enemy_id}]"
+
+//-+-+-+-+-+ ENEMY ID TABLE +-+-+-+-+-
+Enemy_ID_Table:{
+	//Enemy_Float_Entry(2)
+	//Enemy_Float_Entry(49)	
+	//Enemy_Float_Entry(114)	
+
+	
+	// DO NOT ADD ANYMORE ENEMIES AFTER THIS POINT
+	// This makes sure that the game stops comparing enemy IDs
+	Enemy_Float_Entry(0) // Stopping point
+}
+
+
+
+//-+-+-+-+-+ ENEMY_FLOAT SPECIFIC ASM +-+-+-+-+-
+//Check if they are an enemy with the ID in the table
+Check_Float_Status:{	
+
+	// Since adding the status effect to the enemy is last, then we can overwrite 
+	// all DPR values previously except DPR 0x0F since that contains our Enemy ID
+	STA_d (0x04)		// Store the initial status effect ID to DPR 0x04
+	
+	ASMLoadAddress0A(Enemy_ID_Table) // Load in the table
+	
+	AND_i (0x0000)		// Bitwise AND A to get 0
+	TAY					// Initialize our Y register to be our counter
+	
+	// Loop through our table to see if any of the Enemy IDs match our current enemy
+Check_Floating_Loop:
+	LDA_dly (0x0A)		// Load in our entry from the table
+	CMP_i (0x0000)		// Check if we are at the stopping point
+	BEQ_a (Check_Floating_Break)	// Break from the loop if so
+	
+	// Else, we need to check if the current enemy has the same ID in the table
+	CMP_d (0x0F)		// Check if the IDs are the same
+	BEQ_a (Make_Enemey_Float) // If so, then make that enemy have the floating status
+	
+	// If not, then check the next enemy
+	INY
+	INY
+	BRA_a (Check_Floating_Loop)
+	
+Make_Enemey_Float:
+	SEP (0x20)			// Make A register 8-bit
+	LDA_8 (0x04)		// Load in 10, the ID of the floating status
+	LDX_d (0x02)		// Load in the enemy's combatant table address
+	STA_x (0x001D)		// Store the status into Status Group 0
+	REP (0x20)			// Make A register 16-bit
+	
+Check_Floating_Break:
+	
+Return:
+	RTL
+}

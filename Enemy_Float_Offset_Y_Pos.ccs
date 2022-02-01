@@ -1,0 +1,61 @@
+import asm65816
+import asmref
+import Enemy_Float_Main
+
+/*-+-+-+-+-+ SCRIPT INFO +-+-+-+-+-
+This script works ONLY in conjunction with the Enemy_Float.ccs file.
+
+What this script does is to offset y-axis positions of enemy battle sprites
+at the beginning of battle so that enemies float at different offsets while
+maintaining thier upper and lower bounds.
+*/
+
+//-+-+-+-+-+ SETTINGS +-+-+-+-+-
+define y_offset = 0x0056
+
+//-+-+-+-+-+ ROM OVERWRITES +-+-+-+-+-
+// Routine is located at 0xC2F121
+ROM[0xC2F542] = JMP_l (Change_Y_Offset)
+
+//-+-+-+-+-+ ASM CODE +-+-+-+-+-
+Change_Y_Offset: {
+  REP (0x31)
+  PHX
+  PHA
+  
+  // Check to make sure that we are only changing the y-axis
+  // positions of the enemies with the status effecct
+  LDA_x (0x9FC9)
+  AND_i (0x00FF)
+  CMP_i (0x000A)
+  BNE_a (Not_A_Vaild_Enemy)
+  
+  LDA_i (y_offset)
+  JSL (Rand_Mod_A)
+  STA_d (0x04)
+  PLA
+  SEC
+  SBC_d (0x04)
+  PLX
+  STA_d (0x04)
+  
+  SEP (0x20)
+  STA_x (0x9FF1)
+  STA_x (0x9FDC)
+  BRA_a (Old_Code)
+
+Not_A_Vaild_Enemy:
+  PLA
+  PLX
+
+Old_Code:  
+  // Old code
+  REP (0x20)
+  LDA_d (0x14)
+  INC
+  STA_d (0x14)
+  
+Return:
+  // Jump to UNKNOWN43
+  JMP_l (0xC2F549)
+}
