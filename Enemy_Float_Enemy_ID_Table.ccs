@@ -37,6 +37,7 @@ Check_Float_Status:{
 
 	// Since adding the status effect to the enemy is last, then we can overwrite 
 	// all DPR values previously except DPR 0x0F since that contains our Enemy ID
+	REP(0x20)			// Make A register 16-bit
 	STA_d (0x04)		// Store the initial status effect ID to DPR 0x04
 	
 	ASMLoadAddress0A(Enemy_ID_Table) // Load in the table
