@@ -1,16 +1,17 @@
 import asm65816
 import asmref
 import Enemy_Float_Enemy_ID_Table
+import Enemy_Refresh
 
 /*
-	This script's purpose is to add any additional stats to an enemy before
-	starting the battle. Since the ROM address we are jumping out of is at
-	the end of the routine that writes stats to the enemy, it's safe to 
-	overwrite DPR values or even make your own routine within the
-	Add_More_Enemy_Settings routine.
-	
-	JUST DON'T WRITE CODE AFTER THE Return LABEL SINCE THAT IS THE ORIGINAL CODE 
-	FROM THE ROUTINE WE'VE JUMPED OUT OF. ANYTHING BEFORE IT IS FINE.
+        This script's purpose is to add any additional stats to an enemy before
+        starting the battle. Since the ROM address we are jumping out of is at
+        the end of the routine that writes stats to the enemy, it's safe to 
+        overwrite DPR values or even make your own routine within the
+        Add_More_Enemy_Settings routine.
+        
+        JUST DON'T WRITE CODE AFTER THE Return LABEL SINCE THAT IS THE ORIGINAL CODE 
+        FROM THE ROUTINE WE'VE JUMPED OUT OF. ANYTHING BEFORE IT IS FINE.
 */
 
 //-+-+-+-+-+ DEFINES +-+-+-+-+-
@@ -18,19 +19,18 @@ define Check_Float_Status = Enemy_Float_Enemy_ID_Table.Check_Float_Status
 
 //-+-+-+-+-+ SCRIPT ROM OVERWRITES +-+-+-+-+-
 ROM[0xC2B92C] = {
-	JMP_l (Add_More_Enemy_Settings)
+        JMP_l (Add_More_Enemy_Settings)
 }
 
 
 //-+-+-+-+-+ SCRIPT ASM CODE +-+-+-+-+-
 Add_More_Enemy_Settings:{
-	// Add your jumper code in here
-	JSL (Check_Float_Status)
-	
-		
-	// But not after here
+        // Add your jumper code in here
+        JSL (Check_Float_Status)
+        JSL (Check_Refresh)
+        // But not after here
 Return:
-	REP (0x20)
-	PLD
-	RTL
+        REP (0x20)
+        PLD
+        RTL
 }

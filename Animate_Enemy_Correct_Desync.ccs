@@ -1,0 +1,452 @@
+import asm65816
+import asmref
+import Animate_Enemy_Main
+
+/*
+	This scrip helps with desynchronization of the animated frames. Frames can desync when:
+	. An enemy dies
+	. An enemy calls for help
+	
+	Reason being is that the very first unique enemy will hold all of the data that represents all
+	of those unique enemy's frame data. 
+	
+	Example:
+	--------
+	So say there are 4 Insane Cultists, "Insane Cultists A" will hold the frame data that changes
+	all of the other Insane Cultist. However, "Insane Cultist B" and the other Insane Cultist
+	doesn't have the same frame data as "Insane Cultist A", so when "Insane Cultist A" dies, 
+	the game will use "Insane Cultist B" to check for the frame data, but "Insane Cultist B" does 
+	not have the update to date frame data. This means that the frames will desync for all of the
+	Insane Cultists and you will end up with glitched graphics for them.
+	
+	Solution:
+	---------
+	Modify the routines that deal with dying or calling for help so that when an enemy does one of
+	those things, then it copies it's frame data to all unique enemies that share the same enemy ID
+	of the dead or calling enemy.
+*/
+
+// +-+-+-+-+- ROM OVERWRITES -+-+-+-+-+
+// Located in the KO_TARGET routine.
+// Copies over the dead enemy's frame data to the same enemies of its type
+ROM[0xC27AE8] = {
+	JSL (Copy_Frame_Data)
+	NOP
+	NOP
+	NOP
+}
+
+// Located in the CALL_FOR_HELP_COMMON routine
+// This makes it so that the when stats gets initialized, then the frame data does not get reset
+ROM[0xC2C0BF] = {
+	JSL (Correct_Desync)
+}
+
+// +-+-+-+-+- ASM ROUTINES -+-+-+-+-+
+// Used to transfer enemy animation state to the new first enemy of that type, if the first enemy dies
+Copy_Frame_Data:
+	// Old code
+	// Set enemy's status-0 to "unconscious"
+	LDA_8 (0x01)
+	LDX_d (0x02)
+	STA_x (0x001D)
+
+	// New code
+	REP (0x20)
+	// $16 = address of some other battler that might have the same ID
+	// Start it at &BattlersTable[8]
+	LDX_i (0xA21C)
+	STX_d (0x16)
+	BRA_a (Copy_Frame_Data_loopcond1)
+Copy_Frame_Data_loop1:
+
+	// As before...
+	// There might be no enemy here, so check that this Battler...
+	// * is "conscious"
+	LDY_i (12)
+	LDA_diy (0x16)
+	AND_i (0x00FF)
+	BEQ_a (Copy_Frame_Data_loopcontinue1)
+	// * does not have the "dead"/"unconscious" status
+	LDY_i (29)
+	LDA_diy (0x16)
+	AND_i (0x00FF)
+	CMP_i (0x0001)
+	BEQ_a (Copy_Frame_Data_loopcontinue1)
+	// * is on the enemies' side
+	LDY_i (14)
+	LDA_diy (0x16)
+	AND_i (0x00FF)
+	CMP_i (0x0001)
+	BNE_a (Copy_Frame_Data_loopcontinue1)
+	// * is supposed to have a sprite in the first place
+	LDY_i (2)
+	LDA_diy (0x16)
+	AND_i (0x00FF)
+	BEQ_a (Copy_Frame_Data_loopcontinue1)
+
+	// If the ID matches the enemy that's about to die, then we don't have to do
+	// anything.
+	// The enemy with the animation state is that one (in $16), not the one we
+	// just killed.
+	// 76 = offset of stable "call for help" ID in battler struct
+	// I think we're currently using that in all the animation code...?
+	LDY_i (76)
+	LDA_diy (0x16)
+	CMP_diy (0x02)
+	BEQ_a (Copy_Frame_Data_Return)
+
+Copy_Frame_Data_loopcontinue1:
+	// Otherwise, keep looking at the next enemies
+	LDA_d (0x16)
+	CLC
+	ADC_i (0x004E)
+	STA_d (0x16)
+
+Copy_Frame_Data_loopcond1:
+	// Keep looking until we run into this enemy
+	LDA_d (0x16)
+	CMP_d (0x02)
+	BCC_a (Copy_Frame_Data_loop1)
+
+	// We didn't run into the enemy, so that means this enemy is keeping track of
+	// the animation state for all other enemies of its kind.
+	// Skip past this enemy so we can look for the new enemy to hold its state
+	CLC
+	ADC_i (0x004E)
+	STA_d (0x16)
+	BRA_a (Copy_Frame_Data_loopcond2)
+Copy_Frame_Data_loop2:
+
+	// Copy-paste!
+	// As before...
+	// There might be no enemy here, so check that this Battler...
+	// * is "conscious"
+	LDY_i (12)
+	LDA_diy (0x16)
+	AND_i (0x00FF)
+	BEQ_a (Copy_Frame_Data_loopcontinue2)
+	// * does not have the "dead"/"unconscious" status
+	LDY_i (29)
+	LDA_diy (0x16)
+	AND_i (0x00FF)
+	CMP_i (0x0001)
+	BEQ_a (Copy_Frame_Data_loopcontinue2)
+	// * is on the enemies' side
+	LDY_i (14)
+	LDA_diy (0x16)
+	AND_i (0x00FF)
+	CMP_i (0x0001)
+	BNE_a (Copy_Frame_Data_loopcontinue2)
+	// * is supposed to have a sprite in the first place
+	LDY_i (2)
+	LDA_diy (0x16)
+	AND_i (0x00FF)
+	BEQ_a (Copy_Frame_Data_loopcontinue2)
+
+	// If the ID matches the enemy that's about to die, then it will hold the state
+	// for the animation from now on.
+	// Same note about call for help ID/76 applies as above
+	LDY_i (76)
+	LDA_diy (0x16)
+	CMP_diy (0x02)
+	BNE_a (Copy_Frame_Data_loopcontinue2)
+
+	// Copy the homesickness status (used as, um... total number of frames in the animation, I think it was)
+	// Copied from D-Man's code
+	LDY_i (0x0022)
+	SEP (0x20)
+	LDA_diy (0x02)
+	STA_diy (0x16)
+	// ...and the IQ (used as... current frame number, I guess)
+	LDY_i (0x0031)
+	LDA_diy (0x02)
+	STA_diy (0x16)
+	BRA_a (Copy_Frame_Data_Return)
+
+Copy_Frame_Data_loopcontinue2:
+
+	// We haven't found another enemy like the one that's dying, so keep looking
+	LDA_d (0x16)
+	CLC
+	ADC_i (0x004E)
+	STA_d (0x16)
+
+Copy_Frame_Data_loopcond2:
+	// Keep looking until we've looked through every possible enemy
+	CMP_i (0xA96C) // &BattlersTable[32]
+	BCC_a (Copy_Frame_Data_loop2)
+
+    // NEW: since this is the last enemy of its kind, clean up the sprite map, so we don't have to
+    // do anything special if someone calls for help and a new version of that enemy is spawned
+    // with an assumed "current frame" count of 0.
+    
+    // First we need to find the backtrack amount, which depends on the enemy's sprite size and the current frame.
+    // backtrackAmount = ArrayOfAllTheBacktrackTables[AnimationTable[currentBattler->id76].sprite_size - 1][currentBattler->homesickness]
+    // First we need the enemy's ID...
+    LDX_d (0x02)
+    LDA_x (76)
+	AND_i (0x00FF)
+    // With that, we can get its entry in the animation table, to find the sprite size
+    ASL
+    ASL
+    ASL
+    ADC_i (3)
+    TAX
+    LDA_xl (Animation_Table)
+    AND_i (0xFF)
+    // Then we can use that to find the right backtrack table address
+    DEC
+    ASL
+    TAX
+    LDA_xl (ArrayOfAllTheBacktrackTables)
+    // Add in the current frame number...
+    LDX_d (0x02)
+    SEP (0x20)
+    ADC_x (0x0022)
+    XBA
+    ADC_8 (0x00)
+    XBA
+	// (times 2 because freaking `short`s, how do they work)
+    ADC_x (0x0022)
+    XBA
+    ADC_8 (0x00)
+    XBA
+    REP (0x20)
+    // And finally, read from the table
+    TAX
+    LDA_xl("[00 00 {byte [2] SIZE_32x32_Backtrack_Table}]")
+    // and put (negative that) in $16
+    EOR_i (0xFFFF)
+    INC
+    STA_d (0x16)
+
+    // Then we need to loop over all the spritemaps... starting from the first one for the given enemy
+    LDX_d (0x02)
+    LDA_x (67)
+    AND_i (0x00FF)
+    // Each spritemap entry is 5 bytes
+    PHA
+    ASL
+    ASL
+    ADC_s (0x01)
+    PLX
+    // And each enemy gets up to 16 spritemaps
+    ASL
+    ASL
+    ASL
+    ASL
+    ADC_i (0xAAD6)
+    TAX
+Copy_Frame_Data_Reset_Spritemaps_loop:
+    LDA_x (1)
+    CLC
+    ADC_d (0x16)
+    // AND_i (0xFFCC)
+    STA_x (1)
+    
+    LDA_x (0x141)
+    CLC
+    ADC_d (0x16)
+    // AND_i (0xFFCC)
+    STA_x (0x141)
+    
+    LDA_x (4)
+    AND_i (0x0080)
+    BNE_a (Copy_Frame_Data_Return)
+    
+    INX
+    INX
+    INX
+    INX
+    INX
+    BRA_a (Copy_Frame_Data_Reset_Spritemaps_loop)
+    
+Copy_Frame_Data_Return:
+
+	SEP (0x20)
+	RTL
+
+// Please keep all backtrack tables in the same CCScript file... thanks
+ArrayOfAllTheBacktrackTables: {
+    short SIZE_32x32_Backtrack_Table
+    short SIZE_64x32_Backtrack_Table
+    short SIZE_32x64_Backtrack_Table
+    short SIZE_64x64_Backtrack_Table
+    short SIZE_128x64_Backtrack_Table
+    // there is no 128x128 table, but it would have one entry of 0000, which matches every other table in here
+    short SIZE_32x32_Backtrack_Table
+}
+
+//This is D-Man's old non-working version:
+/*Copy_Frame_Data:{
+	// Old code
+	LDA_8 (0x01)	// Load the dead status
+	LDX_d (0x02)	// Load in the enemy
+	STA_x (0x001D)	// Store the dead status into the enemy's current status
+	
+	// Our code
+	REP (0x20)		// Make A register 16-bit
+	LDA_x (0x0000)	// Load in the enemy's ID
+	
+	STZ_d (0x16)	// Initialize DPR 0x16 to 0
+	STZ_d (0x04)	// Initialize our loop counter DPR 0x04 to 0
+	BRA_a (Loop_Condition)
+	
+Loop:
+	TXA				// Transfer the old enemy address to A
+	CLC				// Clear C bit in P register
+	ADC_i (0x004E)	// Add the battler's offset to the enemy address to get the next enemy
+	STA_d (0x16)	// Store the current enemy address to DPR 0x16
+	LDA_di (0x16)	// Load in the current enemy's ID
+	CMP_di (0x02)	// Compare the current enemy's ID to the original ID of the enemy
+	BNE_a (Loop_Condition)	// If it's not the same, then go to the next enemy
+	
+	// Else, then we set the frame data to that enemy
+	LDY_i (0x0000)	// Clear the Y Register
+	SEP (0x30)		// Make A/X/Y Register 8-bit
+	
+	LDY_8 (0x22)	// Load in the Homesickness status offset to the Y Register
+	LDA_diy (0x02)	// Load in the Game Frame Counter (Homesickness) from the old enemy
+	STA_diy (0x16)	// Store it into the Game Frame Counter (Homesickness) of the current enemy
+	
+	LDY_8 (0x31)	// Load in the IQ status offset to the Y Register
+	LDA_diy (0x02)	// Load in the Current Frame Counter (IQ) from the old enemy
+	STA_diy (0x16)	// Store it into the Current Frame Counter (IQ) of the current enemy
+	
+Loop_Condition:
+	REP (0x30)		// Make A/X/Y 16-bit
+	INC_d (0x04)	// Increment the loop counter
+
+	LDA_d (0x04)	// Load in our loop counter
+	CMP_i (0x0008)	// Check if we have looped through all enemies
+	BNE_a (Loop)	// If not, then we continue to loop through
+		
+Return:
+	SEP (0x20)		// Make A register 8-bit
+	RTL				// Return
+}
+*/
+
+//Prior version
+/*Correct_Desync:{
+	LDA_i (0x0000)	// Load in a sentinel number
+	PHA				// Push it into the stack
+	
+	LDX_a (0xA972)	// Load in the target
+	LDA_x (0x0022)	// Load in Game Frame Counter (Homesickness) status
+	CMP_i (0x0000)	// Check if it's 0
+	BEQ_a (Old_Code)// If so, then skip. Meaning that this enemy isn't a holder of the frame data
+	
+	// Else, then we are looking at the holder of the frame data 
+	PLY				// Get rid of the sentinel number from the stack
+	PHA				// Push the Game Frame Counter (Homesickness) status to the stack
+	LDA_x (0x0031)	// Load in the Current Frame Counter (IQ) from the enemy
+	PHA				// Push the data to the stack
+	
+	LDA_i (0x0001)	// Initialize our sentinel number to 1
+	PHA				// Push it to the stack
+	
+Old_Code:
+	LDX_a (0xA972)
+	LDA_d (0x26)
+	JSL (0xC2B6EB)
+	
+Our_Code:
+	PLA				// Pull in the sentinel number from the Stack
+	CMP_i (0x0000)	// Check if it's 0
+	BEQ_a (Return)	// If it is, then we did not call in our frame data holder enemy
+	
+	// Else, we must've and we need to re-initalize the frame data to the holder
+	LDX_a (0xA972)	// Load in the target
+	PLA				// Pull in the Current Frame Counter (IQ) from the Stack
+	PLY				// Pull in the Game Frame Counter (Homesickness) from the Stack
+	SEP (0x20)		// Make A register 8-bit
+	STA_x (0x0031)	// Store the Current Frame Counter (IQ) to the enemy's IQ stat
+	TYA				// Transfer the Game Frame Counter (Homesickness) stat to the A register
+	STA_x (0x0022)	// Store the Game Frame Counter (Homesickness) to the enemy's stat
+	REP (0x20)		// Make the A register 16-bit
+	
+Return:
+	RTL
+}*/
+
+//pheonixbound's edits
+Correct_Desync: {
+	REP (0x31)
+	PHD
+	PHA
+	TDC
+	ADC_i (-4)
+	TCD
+	PLA
+
+	STX_d (0x00) // $00 = target
+
+	// BattlerInitEnemyStats(A, X)
+	JSL (0xC2B6EB)
+
+	// b = target + 1
+	LDA_d (0x00)
+	CLC
+	ADC_i (0x004E)
+	TAX
+Correct_Desync_loop:
+	// run the loop if b < &BattlersTable[32]
+	CMP_i (0xA96C)
+	BCS_a (Correct_Desync_return)
+
+	// As before...
+	// There might be no enemy here, so check that this Battler...
+	// * is "conscious"
+	LDA_x (12)
+	AND_i (0x00FF)
+	BEQ_a (Correct_Desync_continue)
+	// * does not have the "dead"/"unconscious" status
+	LDA_x (29)
+	AND_i (0x00FF)
+	CMP_i (0x0001)
+	BEQ_a (Correct_Desync_continue)
+	// * is on the enemies' side
+	LDA_x (14)
+	AND_i (0x00FF)
+	CMP_i (0x0001)
+	BNE_a (Correct_Desync_continue)
+	// * is supposed to have a sprite in the first place
+	LDA_x (2)
+	AND_i (0x00FF)
+	BEQ_a (Correct_Desync_continue)
+
+	// So the enemy's valid. But does it have the same (calling-for-help-stable) enemy ID as `target`?
+	LDA_x (76)
+	LDY_i (76)
+	CMP_diy (0x00)
+	// If not, then we need to keep looking
+	BNE_a (Correct_Desync_continue)
+
+	// It's the same! So we need to copy animation state back into `target` to prevent inconsistencies
+	// First the homesickness status
+	LDY_i (0x0022)
+	SEP (0x20)
+	LDA_x (0x0022)
+	STA_diy (0x00)
+
+	// Then the IQ
+	LDY_i (0x0031)
+	LDA_x (0x0031)
+	STA_diy (0x00)
+
+	// And finally we're freaking done
+	BRA_a (Correct_Desync_return)
+
+Correct_Desync_continue:
+	TXA
+	CLC
+	ADC_i (0x004E)
+	TAX
+	BRA_a (Correct_Desync_loop)
+
+Correct_Desync_return:
+	PLD
+	RTL
+}

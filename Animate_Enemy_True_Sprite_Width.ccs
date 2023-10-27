@@ -1,26 +1,26 @@
 import asm65816
 import ASMRef
 import Animate_Enemy_Main
+import VanillaEnemyConfigTable
 
 /*
-	This script will make the game display sprites that are allowed in the battle.
-	This script is used primarily for the Animate_Enemy script so that the game
-	can recognize the sprites
-	
-	Sprite Width:
-	0x01 - 32x32
-	0x02 - 64x32
-	0x03 - 32x64
-	0x04 - 64x64
-	0x05 - 128x64
-	0x06 - 128x128
-	
-	We'll use the highest order bit (eg, 0x8000) to signal that we are using our
-	modified routine.
+        This script will make the game display sprites that are allowed in the battle.
+        This script is used primarily for the Animate_Enemy script so that the game
+        can recognize the sprites
+        
+        Sprite Width:
+        0x01 - 32x32
+        0x02 - 64x32
+        0x03 - 32x64
+        0x04 - 64x64
+        0x05 - 128x64
+        0x06 - 128x128
+        
+        We'll use the highest order bit (eg, 0x8000) to signal that we are using our
+        modified routine.
 */
 
 // +-+-+-+-+- DEFINES -+-+-+-+-+
-define ENEMY_CONFIG_TABLE = 0xD59589
 define BATTLE_SPRITE_POINTERS = 0xCE62EE
 
 // +-+-+-+-+- ROM OVERWRITES -+-+-+-+-+
@@ -28,242 +28,309 @@ define BATTLE_SPRITE_POINTERS = 0xCE62EE
 
 // Located in the BATTLE_SPRITE_WIDTH routine
 ROM[0xC2F008] = {
-	JSL (Calculate_True_Width)
-	JMP (0xF018)
+        JSL (Calculate_True_Width)
+        JMP (0xF018)
 }
 
 // Making sure that I sanitize broken ASM code
 ROM[0xC2F00F] = {
-	NOP
-	NOP
-	NOP
-	NOP
+        NOP
+        NOP
+        NOP
+        NOP
 }
 
 ROM[0xC2F017] = RTL
 ROM[0xC2F018] = {
-	JSL (Calculate_True_Width_2)
-	NOP
+        JSL (Calculate_True_Width_2)
+        NOP
 }
 
 // Located in 0xC2F0D1 (Controls how many sprites to display in battle)
 ROM[0xC2F0E3] = {
-	JSL (sub_0xC2F0E3)
-	NOP
-	NOP
-	BRA_a (0xC2F0FC)
+        JSL (sub_0xC2F0E3)
+        NOP
+        NOP
+        BRA_a (0xC2F0FC)
 }
 
 // Located in 0xC2F121. Need to use our modified 0xC2EFFD routine
 ROM[0xC2F172] = {
-	JSL (y_reg_Get_Sprite_Width)
-	NOP
-	NOP
+        JSL (y_reg_Get_Sprite_Width)
+        NOP
+        NOP
 }
 
 ROM[0xC2F1B2] = {
-	JSL (x_reg_Get_Sprite_Width)
-	NOP
-	NOP
+        JSL (x_reg_Get_Sprite_Width)
+        NOP
+        NOP
 }
 
 ROM[0xC2F25A] = {
-	JSL (y_reg_Get_Sprite_Width)
-	NOP
-	NOP
+        JSL (y_reg_Get_Sprite_Width)
+        NOP
+        NOP
 }
 
 ROM[0xC2F387] = {
-	JSL (x_reg_Get_Sprite_Width)
-	NOP
-	NOP
+        JSL (x_reg_Get_Sprite_Width)
+        NOP
+        NOP
 }
 
 // +-+-+-+-+- ASM CODE-+-+-+-+-+
 Calculate_True_Width:{
-	STA_d (0x02)	// We just need to add this
-	STX_d (0x0A)	// And also add this too
-	AND_i (0x00FF)	// Clears the 0x8000 bit if we did use it
-	
-	// Old code
-	STA_d (0x04)	
-	ASL
-	ASL
-	ADC_d (0x04)	// 0xC2F00C
-	TAX				// 0xC2F00E
-	INX				// 0xC2F00F
-	INX				// 0xC2F010
-	INX				// 0xC2F011
-	INX				// 0xC2F012
-	STX_d (0x0A)	// Store Vanilla EB's offset of the Sprite Width to DPR 0x06
-	
-	RTL
+        STA_d (0x02)    // We just need to add this
+        STX_d (0x0A)    // And also add this too
+        AND_i (0x00FF)  // Clears the 0x8000 bit if we did use it
+        
+        // Old code
+        STA_d (0x04)    
+        ASL
+        ASL
+        ADC_d (0x04)    // 0xC2F00C
+        TAX                             // 0xC2F00E
+        INX                             // 0xC2F00F
+        INX                             // 0xC2F010
+        INX                             // 0xC2F011
+        INX                             // 0xC2F012
+        STX_d (0x0A)    // Store Vanilla EB's offset of the Sprite Width to DPR 0x06
+        
+        RTL
 }
 
 Calculate_True_Width_2:{
-	AND_i (0x00FF)		// Get low byte
-	
-	STA_d (0x04)		// Store our sprite size ID into DPR 0x06
-	LDA_d (0x02)		// Load in our A parameter
-	AND_i (0x8000)		// Check if that parameter contains our flag
-	BEQ_a (Old_Code)	// If not, then go to the old code
-	
-	// Else, we use our own code
-	// I have a hunch that something might break here with animated sprites
-	// will check back here later if anything breaks
-	
-	ASMLoadAddress06(Animation_Table)
-	LDA_d (0x02)		// Load in our sprite ID
-	AND_i (0x00FF)		// Get only the sprite ID
-	STA_d (0x02)		// Store it into DPR 0x02
-	ASL	
-	ASL
-	ASL					// Multply it by 8
-	CLC
-	ADC_d (0x06)		// Get the enemy's entry offset into the Animation Table
-	STA_d (0x06)		// Update the pointer to the table
-	
-	LDY_i (0x0003)		// Load in that enemy's sprite size offset
-	LDA_dly (0x06)		// Load the enemy's sprite size
-	AND_i (0x00FF)		// Get low byte
-	BNE_a (Skip_Load)	// If there is a setting for that enemy, then skip loading DPR 0x04
-	
-	// Else, load the enemy's sprite size
+        AND_i (0x00FF)          // Get low byte
+        
+        STA_d (0x04)            // Store our sprite size ID into DPR 0x06
+        LDA_d (0x02)            // Load in our A parameter
+        AND_i (0x8000)          // Check if that parameter contains our flag
+        BEQ_a (Old_Code)        // If not, then go to the old code
+        
+        // Else, we use our own code
+        // I have a hunch that something might break here with animated sprites
+        // will check back here later if anything breaks
+        
+        ASMLoadAddress06(Animation_Table)
+        LDA_d (0x02)            // Load in our sprite ID
+        AND_i (0x00FF)          // Get only the sprite ID
+        STA_d (0x02)            // Store it into DPR 0x02
+        ASL     
+        ASL
+        ASL                                     // Multply it by 8
+        CLC
+        ADC_d (0x06)            // Get the enemy's entry offset into the Animation Table
+        STA_d (0x06)            // Update the pointer to the table
+        
+        LDY_i (0x0003)          // Load in that enemy's sprite size offset
+        LDA_dly (0x06)          // Load the enemy's sprite size
+        AND_i (0x00FF)          // Get low byte
+        BNE_a (Skip_Load)       // If there is a setting for that enemy, then skip loading DPR 0x04
+        
+        // Else, load the enemy's sprite size
 Old_Code:
-	LDX_d (0x0A)		// Load in the old sprite size
-	JSL (0xC2F013)		// Loads in Vanilla EB's sprite table
-	AND_i (0x00FF)		// Get low byte only
-	
+        LDX_d (0x0A)            // Load in the old sprite size
+        JSL (0xC2F013)          // Loads in Vanilla EB's sprite table
+        AND_i (0x00FF)          // Get low byte only
+        
 Skip_Load:
-	CMP_i (0x0001)
-	RTL
+        CMP_i (0x0001)
+        RTL
 }
 
 sub_0xC2F0E3:{
-	TXA					// Transfer the counter to the A register
-	ASL					// Double it
-	TAX					// Transfer it back to the X register
-	LDA_x (0x9F8C)		// Load in the enemy ID
-	LDY_i (0x005F)		// Load in the enemy entry offset for each enemy in the enemy_config_table
-	JSL (0xC08FF7)		// Multiply the enemy ID with the entry offset
-	CLC					// Clear C bit in P register
-	ADC_i (0x001C)		// Add the enemy sprite ID offset
-	TAX					// Transfer the offset to the X register
-	LDA_xl (ENEMY_CONFIG_TABLE)	// Load in the enemy sprite ID
-	PHA					// Push enemy sprite ID to the stack
-	
-	LDA_d (0x0E)		// Load in the counter
-	ASL					// Double it
-	TAX					// Store it back to the X register
-	LDA_x (0x9F8C)		// Load in the enemy ID
-	TAX					// Transfer it to the X register
-	
-	PLA					// Pull the enemy sprite ID off the stack
-	JSL (r_0xC2EFFD_modified)	// Get the enemy's correct sprite width
-	RTL					// Return
+        TXA                                     // Transfer the counter to the A register
+        ASL                                     // Double it
+        TAX                                     // Transfer it back to the X register
+        LDA_x (0x9F8C)          // Load in the enemy ID
+        LDY_i (0x005E)          // Load in the enemy entry offset for each enemy in the enemy_config_table
+        JSL (0xC08FF7)          // Multiply the enemy ID with the entry offset
+        CLC                                     // Clear C bit in P register
+        ADC_i (0x001C)          // Add the enemy sprite ID offset
+        TAX                                     // Transfer the offset to the X register
+		//REP (0x20)
+        JSL (EnemyTable_FlagCheck_xl)	// Load in the enemy sprite ID
+		//SEP (0x20)
+        PHA                                     // Push enemy sprite ID to the stack
+        
+        LDA_d (0x0E)            // Load in the counter
+        ASL                                     // Double it
+        TAX                                     // Store it back to the X register
+        LDA_x (0x9F8C)          // Load in the enemy ID
+        TAX                                     // Transfer it to the X register
+        
+        PLA                                     // Pull the enemy sprite ID off the stack
+        JSL (r_0xC2EFFD_modified)       // Get the enemy's correct sprite width
+        RTL                                     // Return
 }
 
 // Modified version of the 0xC2EFFD routine so that it works
 // with animated enemies
 r_0xC2EFFD_modified:{
-	REP (0x31)
-	PHD
-	PHA
-	TDC
-	ADC_i (0xFFF2)
-	TCD
-	PLA
-	DEC
-	STA_d (0x04)	// Store the enemy sprite ID to DPR 0x04
-	STX_d (0x06)	// Store the enemy's ID to DPR 0x06
-	ASL
-	ASL
-	ADC_d (0x04)	// Multiply it by 5
-	TAX				// Transfer to A
-	INX
-	INX
-	INX
-	INX				// Add it by 4
-	JSL (0xC2F013)
-	AND_i (0x00FF)	// Get low byte
-	//LDA_xl (BATTLE_SPRITE_POINTERS)	// Load in the sprite size from the offset
-	
-	STA_d (0x02)	// Store the sprite size to DPR 0x02
-	LDA_d (0x06)	// Load in the enemy ID
-	ASL
-	ASL
-	ASL				// Multiply it by 8
-	INC
-	INC
-	INC				// Add 3 to get the sprite size of that sprite in the table
-	TAX				// Transfer offset in table to X register
-	ASMLoadAddress06(Animation_Table)	// Load in the Animation_Table
-	TXA				// Transfer offset in table to A register
-	CLC				// Clear C bit in P register
-	ADC_d (0x06)	// Add the offset to the start of the table
-	STA_d (0x06)	// Update the address to point at the enemy's sprite size
-	LDA_dl (0x06)	// Get the enemy's sprite size in the animation table
-	AND_i (0x00FF)	// Get low byte
-	BEQ_a (Load_Vanilla_Size)	// If there is no setting for that enemy, then we need to load in EB's sprite size for that enemy
-	BRA_a (Check)	// Else, we use our own sprite size from the table
-	
+        REP (0x31)
+        PHD
+        PHA
+        TDC
+        ADC_i (0xFFF2)
+        TCD
+        PLA
+        DEC
+        STA_d (0x04)    // Store the enemy sprite ID to DPR 0x04
+        STX_d (0x06)    // Store the enemy's ID to DPR 0x06
+        ASL
+        ASL
+        ADC_d (0x04)    // Multiply it by 5
+        TAX                             // Transfer to A
+        INX
+        INX
+        INX
+        INX                             // Add it by 4
+        JSL (0xC2F013)
+        AND_i (0x00FF)  // Get low byte
+        //LDA_xl (BATTLE_SPRITE_POINTERS)       // Load in the sprite size from the offset
+        
+        STA_d (0x02)    // Store the sprite size to DPR 0x02
+        LDA_d (0x06)    // Load in the enemy ID
+        ASL
+        ASL
+        ASL                             // Multiply it by 8
+        INC
+        INC
+        INC                             // Add 3 to get the sprite size of that sprite in the table
+        TAX                             // Transfer offset in table to X register
+        ASMLoadAddress06(Animation_Table)       // Load in the Animation_Table
+        TXA                             // Transfer offset in table to A register
+        CLC                             // Clear C bit in P register
+        ADC_d (0x06)    // Add the offset to the start of the table
+        STA_d (0x06)    // Update the address to point at the enemy's sprite size
+        LDA_dl (0x06)   // Get the enemy's sprite size in the animation table
+        AND_i (0x00FF)  // Get low byte
+        BEQ_a (Load_Vanilla_Size)       // If there is no setting for that enemy, then we need to load in EB's sprite size for that enemy
+        BRA_a (Check)   // Else, we use our own sprite size from the table
+        
 Load_Vanilla_Size:
-	LDA_d (0x02)	// Load in our original sprite size
-	
+        LDA_d (0x02)    // Load in our original sprite size
+        
 Check:
-	AND_i (0x00FF)
-	CMP_i (0x0001)		// 32x32 size sprites
-	BEQ_a (UNKNOWN0)
-	
-	CMP_i (0x0003)		// 32x64 size sprites
-	BEQ_a (UNKNOWN0)
-	
-	CMP_i (0x0002)		// 64x32 size sprites
-	BEQ_a (UNKNOWN1)
-	
-	CMP_i (0x0004)		// 64x64 size sprites
-	BEQ_a (UNKNOWN1)
-	
-	CMP_i (0x0005)		// 128x64 size sprites
-	BEQ_a (UNKNOWN2)
-	
-	CMP_i (0x0006)		// 128x128 size sprites
-	BEQ_a (UNKNOWN2)
-	BRA_a (UNKNOWN3)
-	
+        AND_i (0x00FF)
+        CMP_i (0x0001)          // 32x32 size sprites
+        BEQ_a (UNKNOWN0)
+        
+        CMP_i (0x0003)          // 32x64 size sprites
+        BEQ_a (UNKNOWN0)
+        
+        CMP_i (0x0002)          // 64x32 size sprites
+        BEQ_a (UNKNOWN1)
+        
+        CMP_i (0x0004)          // 64x64 size sprites
+        BEQ_a (UNKNOWN1)
+        
+        CMP_i (0x0005)          // 128x64 size sprites
+        BEQ_a (UNKNOWN2)
+        
+        CMP_i (0x0006)          // 128x128 size sprites
+        BEQ_a (UNKNOWN2)
+        BRA_a (UNKNOWN3)
+        
 UNKNOWN0:
-	LDA_i (0x0004)
-	BRA_a (Return)
+        LDA_i (0x0004)
+        BRA_a (Return)
 
 UNKNOWN1:
-	LDA_i (0x0008)
-	BRA_a (Return)
+        LDA_i (0x0008)
+        BRA_a (Return)
 
 UNKNOWN2:
-	LDA_i (0x0010)
-	BRA_a (Return)
+        LDA_i (0x0010)
+        BRA_a (Return)
 
 UNKNOWN3:
-	LDA_i (0x0000)
+        LDA_i (0x0000)
 
 Return:
-	PLD
-	RTL
+        PLD
+        RTL
 }
 
 y_reg_Get_Sprite_Width:{
-	LDA_y (0x9FAC)		// Load in the enemy ID
-	TAX
-	LDA_y (0x9FAE)		// Load in the enmey's sprite ID
-	JSL (r_0xC2EFFD_modified)
-	RTL
+        LDA_y (0x9FAC)          // Load in the enemy ID
+        TAX
+        LDA_y (0x9FAE)          // Load in the enmey's sprite ID
+        JSL (r_0xC2EFFD_modified)
+        RTL
 }
 
 x_reg_Get_Sprite_Width:{
-	LDA_x (0x9FAC)		// Load in the enemy ID
-	TAY
-	LDA_x (0x9FAE)		// Load in the enmey's sprite ID
-	TYX
-	JSL (r_0xC2EFFD_modified)
-	RTL
+        LDA_x (0x9FAC)          // Load in the enemy ID
+        TAY
+        LDA_x (0x9FAE)          // Load in the enmey's sprite ID
+        TYX
+        JSL (r_0xC2EFFD_modified)
+        RTL
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Edits to CALL_FOR_HELP_COMMON ($C2BD5E),
+// to account for animated enemies
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Because every ENEMY (not enemy sprite) has an entry in the table,
+// we need to use D-Man's version of the routine that takes an enemy ID
+
+ROM[0xC2BE8F] = {
+    JSL (Fix_GetBattleSpriteWidth1)
+    NOP
+}
+Fix_GetBattleSpriteWidth1: {
+    STA_d (0x20)
+    LDX_d (0x26) // $26 holds the enemy ID
+    JSL (r_0xC2EFFD_modified)
+    RTL
+}
+
+ROM[0xC2BEB6] = {
+    JSL (Fix_GetBattleSpriteWidth2)
+    NOP
+}
+Fix_GetBattleSpriteWidth2: {
+    LDA_d (0x20)
+    LDX_d (0x26)
+    JSL (r_0xC2EFFD_modified)
+    RTL
+}
+
+ROM[0xC2BEEE] = {
+    JSL (Fix_GetBattleSpriteWidth3)
+    BRA (0)
+}
+Fix_GetBattleSpriteWidth3: {
+    LDA_x (76) // call for help uses this field to get the enemy ID
+    AND_i (0x00FF)
+    // It's okay to clobber Y. The original code was about to call a function, too,
+    // and spilled things on the stack appropriately.
+    TAY
+    LDA_x (0x0002)
+    TYX
+    JSL (r_0xC2EFFD_modified)
+    RTL
+}
+
+ROM[0xC2C022] = {
+    JSL (Fix_GetBattleSpriteWidth2)
+    NOP
+}
+
+ROM[0xC2C02B] = {
+    JSL (Fix_GetBattleSpriteWidth3)
+    BRA (0)
+}
+
+ROM[0xC2C077] = {
+    JSL (Fix_GetBattleSpriteWidth2)
+    NOP
+}
+
+ROM[0xC2BD37] = {
+	JSL (Fix_GetBattleSpriteWidth3)
+	BRA(0)
 }

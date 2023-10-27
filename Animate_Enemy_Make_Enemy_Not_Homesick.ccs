@@ -2,124 +2,109 @@ import asm65816
 import asmref
 
 /*
-	This script makes the enemy not have the homesickness effect
-	and disables the homesickness glitched graphic when displaying
-	it when a player selects them in battle.
-	
-	This script is primarily used for the Animate_Enemy script to
-	store the initial frame data to the enemy's homesickness stat
+        This script makes the enemy not have the homesickness effect
+        and disables the homesickness glitched graphic when displaying
+        it when a player selects them in battle.
+        
+        This script is primarily used for the Animate_Enemy script to
+        store the initial frame data to the enemy's homesickness stat
 */
 
 
 //+-+-+-+-+-+- ROM OVERWRITE -+-+-+-+-+-+
 // Located in Battle Routine
 // Disable the enemy to feel homesick
-ROM[0xC25812] = {
-	JSL (Homesickness_Check)
-}
+// Changed to being written in the new Nausea routine
+
 
 // Located in routine 0xC223D9 (Controls status graphic on entities)
-// Disable glitched grahpic for homesickness
+// Disable glitched graphic for homesickness
 ROM[0xC223E3] = {
-	JSL (Store_Params)
-	NOP
-	NOP
+        JSL (Store_Params)
+        NOP
+        NOP
 }
 
-// Disable the grahpic if the stat we are checking is homesickness
+// Disable the graphic if the stat we are checking is homesickness
 ROM[0xC22455] = {
-	JMP_l (Check_Homesickness_Graphic)
-	NOP
-	NOP
+        JMP_l (Check_Homesickness_Graphic)
+        NOP
+        NOP
 }
 
 // Located in the KO_TARGET routine. Disables setting homesickness to 0x00 when an enemy dies.
 ROM[0xC27647] = {
-	JSL (Do_Not_Set_Homesickness)
-	NOP
+        JSL (Do_Not_Set_Homesickness)
+        NOP
 }
 
 ROM[0xC27AF4] = {
-	JSL (Do_Not_Set_Homesickness)
-	NOP
+        JSL (Do_Not_Set_Homesickness)
+        NOP
 }
 
 
 //+-+-+-+-+-+- ASM CODE -+-+-+-+-+-+
-Homesickness_Check:{
-	REP (0x31)
-	
-	LDX_a (0xA970)	// Load in the target
-	LDA_x (0x000E)	// Load in the target's "Is Enemy" bool
-	BNE_a (Return) // If the target is an opponent, then skip randomizing
-	
-	// Else, run original code
-	JSL (Rand)
-
-Return:
-	RTL
-}
-
 Store_Params:{
-	CPX_i (0x0000)		// Check if the data in X is 0
-	BNE_a (Original_Code) // If so, skip our code
-	
-	// Else, run our code
-	STA_d (0x06)	// Store original A param data
-	SEC				// Set C bit in P register
-	SBC_i (0x001D)	// Subtract 0x001D from A param to get starting address of the entity's stats in battle (combatant entry)
-	STA_d (0x08)	// Store address to DPR 0x08
-	LDA_d (0x06)	// Load original data
-	
+        CPX_i (0x0000)          // Check if the data in X is 0
+        BNE_a (Original_Code) // If so, skip our code
+        
+        // Else, run our code
+        STA_d (0x06)    // Store original A param data
+        SEC             // Set C bit in P register
+        SBC_i (0x001D)  // Subtract 0x001D from A param to get starting address of the entity's stats in battle (combatant entry)
+        STA_d (0x08)    // Store address to DPR 0x08
+        LDA_d (0x06)    // Load original data
+        
 Original_Code:
-	STX_d (0x02)
-	TAY
-	LDA_y (0x0000)
-	RTL
+        STX_d (0x02)
+        TAY
+        LDA_y (0x0000)
+        RTL
 }
 
 // Disables the status graphic on the text box when the player selects an enemy
 Check_Homesickness_Graphic:{
-	// Store original data
-	PHA
-	PHX
-	PHY
-	
-	TYA				// Transfer the status address to A
-	SEC				// Set C bit in P register
-	SBC_d (0x08)	// Subtract that status address with our entity's combatant address
-	CMP_i (0x0022)	// Check if we are looking at the homesickness stat
-	BNE_a (Original_Code) // If we aren't look at the homesickness stat, then run the original code
-	
-	// Else, disable showing the homesickness stat to the window of the enemy
-	// Pull data off from stack
-	PLY
-	PLX
-	PLA
-	
-	JMP_l (0xC2242D)// Jump to UNKNOWN4 (Shows nothing for graphics)
-	
+        // Store original data
+        PHA
+        PHX
+        PHY
+        
+        TYA                             // Transfer the status address to A
+        SEC                             // Set C bit in P register
+        SBC_d (0x08)    // Subtract that status address with our entity's combatant address
+        CMP_i (0x0022)  // Check if we are looking at the homesickness stat
+        BNE_a (Original_Code) // If we aren't look at the homesickness stat, then run the original code
+        
+        // Else, disable showing the homesickness stat to the window of the enemy
+        // Pull data off from stack
+        PLY
+        PLX
+        PLA
+        
+        JMP_l (0xC2242D)// Jump to UNKNOWN4 (Shows nothing for graphics)	//This has to be changed somehow to make other status icons appear
+        
 Original_Code:
-	// Load original data
-	PLY
-	PLX
-	PLA
-	
-	// Run original code
-	LDA_y (0x0000)
-	AND_i (0x00FF)
-	JMP_l (0xC2245B)// Return to original code address
+        // Load original data
+        PLY
+        PLX
+        PLA
+        
+        // Run original code
+        LDA_y (0x0000)
+        AND_i (0x00FF)
+        JMP_l (0xC2245B)// Return to original code address
 }
 
 Do_Not_Set_Homesickness:{
-	LDX_d (0x02)	// Load in the target
-	LDA_x (0x000E)	// Check if the target is an enemy
-	BNE_a (Return)	// If they are, then skip setting up the homesickness stat
-	
-	// Old Code
-	LDX_d (0x02)
-	STZ_d (0x0022)
-	
+        LDX_d (0x02)    // Load in the target
+        LDA_x (0x000E)  // Check if the target is an enemy
+        BNE_a (Return)  // If they are, then skip setting up the homesickness stat
+        
+        // Old Code
+        LDX_d (0x02)
+        STZ_d (0x0022)
+        
 Return:
-	RTL
+        RTL
 }
